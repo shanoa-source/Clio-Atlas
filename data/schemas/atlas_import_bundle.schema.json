@@ -1,0 +1,587 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://civilization-atlas.local/schemas/atlas_import_bundle.schema.json",
+  "title": "AtlasImportBundle",
+  "description": "Backend JSON data import schema for Global Historical GIS Platform (supports Polities, OSM Territories, Population Density, Nighttime Lights, Maritime/Overland Transport Routes, Species Discoveries, Mortality Catastrophes, Space Missions, Reference Booklists, Custom Events, and Tri-Lingual zh/en/de Prompts).",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Schema semantic version. Must be \"1.0.0\"."
+    },
+    "updatedAt": {
+      "type": "string",
+      "description": "ISO-8601 UTC timestamp auto-populated by the backend on write."
+    },
+    "prompts": { "$ref": "#/$defs/SystemPromptConfig" },
+    "polities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/PolityRecord" },
+      "default": []
+    },
+    "territories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/TerritoryRecord" },
+      "default": []
+    },
+    "populationNodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/PopulationNodeRecord" },
+      "default": []
+    },
+    "nightLightNodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/NightLightNodeRecord" },
+      "default": []
+    },
+    "transportRoutes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/TransportRouteRecord" },
+      "default": []
+    },
+    "speciesDiscoveries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/SpeciesDiscoveryRecord" },
+      "default": []
+    },
+    "mortalityCatastrophes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/MortalityCatastropheRecord" },
+      "default": []
+    },
+    "spaceMissions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/SpaceMissionRecord" },
+      "default": []
+    },
+    "books": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/BookListItem" },
+      "default": []
+    },
+    "customEvents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/CustomHistoricalEvent" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "LonLatTuple": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number", "minimum": -180, "maximum": 180, "description": "WGS84 longitude" },
+        { "type": "number", "minimum": -90, "maximum": 90, "description": "WGS84 latitude" }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "GeoBBox": {
+      "type": "object",
+      "required": ["minLon", "minLat", "maxLon", "maxLat"],
+      "additionalProperties": false,
+      "properties": {
+        "minLon": { "type": "number", "minimum": -180, "maximum": 180 },
+        "minLat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "maxLon": { "type": "number", "minimum": -180, "maximum": 180 },
+        "maxLat": { "type": "number", "minimum": -90, "maximum": 90 }
+      }
+    },
+    "LocalizedStringMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Supported tri-lingual text map (Chinese zh, English en, German de).",
+      "properties": {
+        "zh": { "type": "string" },
+        "en": { "type": "string" },
+        "de": { "type": "string" }
+      }
+    },
+    "OverlayLayerId": {
+      "type": "string",
+      "enum": [
+        "population_density",
+        "night_lights",
+        "transport_routes",
+        "species_discovery",
+        "mortality_catastrophe",
+        "space_race"
+      ]
+    },
+    "YearValuePair": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "integer", "description": "Historical year (negative for BCE, e.g. -454 = 454 BCE)" },
+        { "type": "number", "minimum": 0, "description": "Non-negative metric value at keyframe year" }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "YearRatioPair": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "integer", "description": "Historical year (negative for BCE)" },
+        { "type": "number", "minimum": 0, "maximum": 1, "description": "Normalized ratio in [0, 1]" }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "ThermalSubZone": {
+      "type": "object",
+      "required": ["coords", "radiusLon", "radiusLat"],
+      "additionalProperties": false,
+      "properties": {
+        "coords": { "$ref": "#/$defs/LonLatTuple" },
+        "radiusLon": { "type": "number", "exclusiveMinimum": 0 },
+        "radiusLat": { "type": "number", "exclusiveMinimum": 0 },
+        "weightFactor": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "SystemPromptConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "systemPrompt": { "type": "string" },
+        "i18n": { "$ref": "#/$defs/LocalizedStringMap" }
+      }
+    },
+    "PolityRecord": {
+      "type": "object",
+      "required": [
+        "id",
+        "nameZh",
+        "nameEn",
+        "eraSubtitle",
+        "startYear",
+        "endYear",
+        "representativeColor",
+        "borderColor",
+        "flagId",
+        "flagLabel",
+        "capitalName",
+        "capitalCoords",
+        "historicalSummary",
+        "sourceCitation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "nameZh": { "type": "string", "minLength": 1 },
+        "nameEn": { "type": "string", "minLength": 1 },
+        "nameDe": { "type": "string" },
+        "eraSubtitle": { "type": "string" },
+        "eraSubtitleI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "startYear": { "type": "integer" },
+        "endYear": { "type": "integer" },
+        "representativeColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "borderColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "flagId": {
+          "type": "string",
+          "enum": [
+            "archaic_owl",
+            "delian_alliance",
+            "imperial_athens",
+            "strategoi_wartime",
+            "ionian_siege"
+          ]
+        },
+        "flagLabel": { "type": "string" },
+        "capitalName": { "type": "string", "minLength": 1 },
+        "capitalNameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "capitalCoords": { "$ref": "#/$defs/LonLatTuple" },
+        "historicalSummary": { "type": "string" },
+        "summaryI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "sourceCitation": { "type": "string" }
+      }
+    },
+    "TerritoryRecord": {
+      "type": "object",
+      "required": ["id", "nameZh", "validFrom", "validTo", "tier"],
+      "anyOf": [
+        {
+          "required": ["osmIds"],
+          "properties": {
+            "osmIds": { "minItems": 1 }
+          }
+        },
+        {
+          "required": ["modernAdminNameEn", "approxBBox"]
+        }
+      ],
+      "additionalProperties": false,
+      "description": "Historical territory bound to OpenStreetMap administrative divisions. AI data generators should output accurate `modernAdminNameEn` + `approxBBox` (with `osmIds` omitted or `[]`) and run `npx tsx scripts/resolve-osm-ids.ts` to populate verified OpenStreetMap Relation/Way IDs (`R...` / `W...`). Handwritten polygon coordinate arrays are strictly prohibited.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "polityId": { "type": "string" },
+        "nameZh": { "type": "string", "minLength": 1 },
+        "nameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "validFrom": { "type": "integer" },
+        "validTo": { "type": "integer" },
+        "tier": {
+          "type": "string",
+          "enum": ["metropolis", "cleruchy", "allied_tribute"]
+        },
+        "modernAdminNameEn": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Standard modern English administrative division name (e.g. \"Attica\", \"Lazio\", \"Shaanxi Province\") used by `scripts/resolve-osm-ids.ts` to look up real OpenStreetMap Relation IDs via Nominatim / Overpass API."
+        },
+        "countryCode": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{2}$",
+          "description": "Optional ISO 3166-1 alpha-2 country code (e.g. \"GR\", \"IT\", \"CN\") to disambiguate OSM administrative boundary lookup."
+        },
+        "adminLevel": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 10,
+          "description": "Optional OpenStreetMap boundary admin_level hint (e.g. 4 for first-level region/province, 6 for prefecture/regional unit)."
+        },
+        "osmIds": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^[RW][0-9]+$",
+            "description": "Canonical OpenStreetMap Relation (R...) or Way (W...) ID populated by scripts/resolve-osm-ids.ts"
+          }
+        },
+        "approxBBox": { "$ref": "#/$defs/GeoBBox" }
+      }
+    },
+    "PopulationNodeRecord": {
+      "type": "object",
+      "required": [
+        "id",
+        "nameZh",
+        "center",
+        "radiusDegLon",
+        "radiusDegLat",
+        "validFrom",
+        "validTo",
+        "densityKeyframes",
+        "estimatedTotalNote"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "nameZh": { "type": "string", "minLength": 1 },
+        "nameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "center": { "$ref": "#/$defs/LonLatTuple" },
+        "radiusDegLon": { "type": "number", "exclusiveMinimum": 0 },
+        "radiusDegLat": { "type": "number", "exclusiveMinimum": 0 },
+        "validFrom": { "type": "integer" },
+        "validTo": { "type": "integer" },
+        "densityKeyframes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/YearValuePair" }
+        },
+        "estimatedTotalNote": { "type": "string" },
+        "noteI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "thermalSubZones": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ThermalSubZone" }
+        }
+      }
+    },
+    "NightLightNodeRecord": {
+      "type": "object",
+      "required": [
+        "id",
+        "nameZh",
+        "category",
+        "coords",
+        "spreadDeg",
+        "validFrom",
+        "validTo",
+        "intensityKeyframes",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "nameZh": { "type": "string", "minLength": 1 },
+        "nameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "category": {
+          "type": "string",
+          "enum": ["urban_lamps", "harbor_beacon", "smelting_furnace", "sanctuary_flame"]
+        },
+        "coords": { "$ref": "#/$defs/LonLatTuple" },
+        "spreadDeg": { "type": "number", "exclusiveMinimum": 0 },
+        "validFrom": { "type": "integer" },
+        "validTo": { "type": "integer" },
+        "intensityKeyframes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/YearRatioPair" }
+        },
+        "description": { "type": "string" },
+        "descriptionI18n": { "$ref": "#/$defs/LocalizedStringMap" }
+      }
+    },
+    "TransportRouteRecord": {
+      "type": "object",
+      "required": [
+        "id",
+        "nameZh",
+        "routeType",
+        "originName",
+        "destinationName",
+        "openedYear",
+        "closedYear",
+        "cargoSummary",
+        "waypoints",
+        "usageKeyframes",
+        "sourceCitation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "nameZh": { "type": "string", "minLength": 1 },
+        "nameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "routeType": {
+          "type": "string",
+          "enum": ["maritime", "overland"]
+        },
+        "originName": { "type": "string", "minLength": 1 },
+        "originNameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "destinationName": { "type": "string", "minLength": 1 },
+        "destinationNameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "openedYear": { "type": "integer" },
+        "closedYear": { "type": "integer" },
+        "cargoSummary": { "type": "string" },
+        "cargoSummaryI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "waypoints": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/LonLatTuple" }
+        },
+        "usageKeyframes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/YearValuePair" }
+        },
+        "sourceCitation": { "type": "string" }
+      }
+    },
+    "SpeciesDiscoveryRecord": {
+      "type": "object",
+      "required": [
+        "id",
+        "commonNameZh",
+        "scientificName",
+        "classicalGreekName",
+        "kingdom",
+        "discovererZh",
+        "discovererEn",
+        "discoveryYear",
+        "locationNameZh",
+        "coords",
+        "historicalNote",
+        "sourceCitation"
+      ],
+      "additionalProperties": false,
+      "description": "Botanical and zoological historical records. Pre-Linnaean (< 1735 CE) rules: (1) `discovererZh` / `discovererEn` / `discovererI18n` MUST state the earliest extant textual chronicler or historical event witness (e.g. '阿里斯托芬 / 泰奥弗拉斯托斯记述' / 'Recorded by Aristophanes / Theophrastus') — never fabricate ancient discoverers or fictional bureaus; (2) `discoveryYear` MUST anchor to the canonical text's composition year or landmark historical event year (e.g. -480 for the sacred olive sprouting after the Persian sack of the Acropolis); (3) `classicalGreekName` keeps its key name globally as 'Classical / Canonical Source-Language Original Name' (Ancient Greek for Greece, Pre-Qin/Han-Tang classical name + transliteration for China, Classical Nahuatl for Mesoamerica, Sanskrit, etc.).",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "commonNameZh": { "type": "string", "minLength": 1 },
+        "commonNameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "scientificName": { "type": "string", "minLength": 1 },
+        "classicalGreekName": {
+          "type": "string",
+          "description": "Generalized Classical / Canonical Source-Language Original Name (keep key `classicalGreekName` across all civilizations: Ancient Greek for Greece, Pre-Qin/Han-Tang classical name + Latin transliteration for China, Classical Nahuatl for Mesoamerica, Sanskrit, etc.)."
+        },
+        "kingdom": { "type": "string", "enum": ["plantae", "animalia"] },
+        "discovererZh": {
+          "type": "string",
+          "minLength": 1,
+          "description": "For discoveryYear < 1735 (pre-Linnaean), strictly enter earliest extant textual chronicler / historical witness (e.g. '阿里斯托芬 / 泰奥弗拉斯托斯记述'); never fabricate ancient discoverers or fictional bureaus."
+        },
+        "discovererEn": {
+          "type": "string",
+          "minLength": 1,
+          "description": "For discoveryYear < 1735 (pre-Linnaean), strictly enter earliest extant textual chronicler / historical witness in English (e.g. 'Recorded by Aristophanes / Theophrastus')."
+        },
+        "discovererI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "discoveryYear": {
+          "type": "integer",
+          "description": "For ancient records (< 1735), strictly anchor to the canonical primary text's composition year or landmark historical event year (e.g. -480 for the Acropolis sacred olive sprout after the Persian sack)."
+        },
+        "locationNameZh": { "type": "string", "minLength": 1 },
+        "locationNameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "coords": { "$ref": "#/$defs/LonLatTuple" },
+        "historicalNote": { "type": "string" },
+        "historicalNoteI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "sourceCitation": { "type": "string" }
+      }
+    },
+    "MortalityCatastropheRecord": {
+      "type": "object",
+      "required": [
+        "id",
+        "nameZh",
+        "causeCategory",
+        "startYear",
+        "endYear",
+        "locationNameZh",
+        "coords",
+        "spreadDeg",
+        "estimatedDeaths",
+        "historicalNote",
+        "sourceCitation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "nameZh": { "type": "string", "minLength": 1 },
+        "nameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "causeCategory": {
+          "type": "string",
+          "enum": ["plague", "warfare", "siege_famine"]
+        },
+        "startYear": { "type": "integer" },
+        "endYear": { "type": "integer" },
+        "locationNameZh": { "type": "string", "minLength": 1 },
+        "locationNameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "coords": { "$ref": "#/$defs/LonLatTuple" },
+        "spreadDeg": { "type": "number", "exclusiveMinimum": 0 },
+        "estimatedDeaths": { "type": "integer", "minimum": 0 },
+        "historicalNote": { "type": "string" },
+        "historicalNoteI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "sourceCitation": { "type": "string" },
+        "thermalSubZones": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ThermalSubZone" }
+        }
+      }
+    },
+    "SpaceMissionRecord": {
+      "type": "object",
+      "required": [
+        "id",
+        "nameZh",
+        "agency",
+        "originBodyId",
+        "targetBodyId",
+        "launchYear",
+        "arrivalYear",
+        "missionStatusZh",
+        "orbitProbes",
+        "surfaceBases"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "nameZh": { "type": "string", "minLength": 1 },
+        "nameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "agency": { "type": "string", "minLength": 1 },
+        "originBodyId": { "type": "string", "minLength": 1 },
+        "targetBodyId": { "type": "string", "minLength": 1 },
+        "launchYear": { "type": "integer" },
+        "arrivalYear": { "type": "integer" },
+        "missionStatusZh": { "type": "string" },
+        "missionStatusI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "orbitProbes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "nameZh",
+              "agency",
+              "orbitAltitudeRatio",
+              "inclinationDeg",
+              "activeFromYear",
+              "activeToYear",
+              "statusZh"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "nameZh": { "type": "string", "minLength": 1 },
+              "agency": { "type": "string" },
+              "orbitAltitudeRatio": { "type": "number", "exclusiveMinimum": 0 },
+              "inclinationDeg": { "type": "number", "minimum": -180, "maximum": 180 },
+              "activeFromYear": { "type": "integer" },
+              "activeToYear": { "type": "integer" },
+              "statusZh": { "type": "string" }
+            }
+          }
+        },
+        "surfaceBases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "nameZh", "agency", "kind", "coords", "landedYear", "statusZh"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "nameZh": { "type": "string", "minLength": 1 },
+              "agency": { "type": "string" },
+              "kind": { "type": "string", "enum": ["lander", "rover", "base"] },
+              "coords": { "$ref": "#/$defs/LonLatTuple" },
+              "landedYear": { "type": "integer" },
+              "statusZh": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "BookListItem": {
+      "type": "object",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "minLength": 1 },
+        "titleI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "author": { "type": "string" },
+        "year": { "type": ["string", "integer"] },
+        "region": { "type": "string" },
+        "era": { "type": "string" },
+        "startYear": { "type": "integer" },
+        "endYear": { "type": "integer" },
+        "bbox": { "$ref": "#/$defs/GeoBBox" },
+        "relatedLayers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OverlayLayerId" }
+        },
+        "isbn": { "type": "string" },
+        "note": { "type": "string" },
+        "noteI18n": { "$ref": "#/$defs/LocalizedStringMap" }
+      }
+    },
+    "CustomHistoricalEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "nameZh": { "type": "string" },
+        "nameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "year": { "type": "integer" },
+        "startYear": { "type": "integer" },
+        "endYear": { "type": "integer" },
+        "coords": { "$ref": "#/$defs/LonLatTuple" },
+        "bbox": { "$ref": "#/$defs/GeoBBox" },
+        "locationNameZh": { "type": "string" },
+        "locationI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "category": { "type": "string" },
+        "categoryI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "relatedLayers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OverlayLayerId" }
+        },
+        "metricLabel": { "type": "string" },
+        "metricI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "summary": { "type": "string" },
+        "description": { "type": "string" },
+        "summaryI18n": { "$ref": "#/$defs/LocalizedStringMap" },
+        "sourceCitation": { "type": "string" }
+      }
+    }
+  }
+}

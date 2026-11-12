@@ -1,0 +1,55 @@
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    font-family: "Plus Jakarta Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif;
+    color-scheme: dark;
+  }
+
+  .font-mono {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Enterprise dark styling for MapLibre canvas & subtle legal attribution */
+.maplibregl-map {
+  font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #06080d;
+  outline: none;
+}
+
+.maplibregl-canvas {
+  outline: none;
+}
+
+.maplibregl-ctrl-attrib.maplibregl-compact,
+.maplibregl-ctrl-attrib {
+  background-color: rgba(11, 14, 20, 0.78) !important;
+  color: rgba(148, 163, 184, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 6px !important;
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+  box-shadow: none !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: rgba(148, 163, 184, 0.85) !important;
+  text-decoration: none !important;
+}
+
+.maplibregl-ctrl-attrib a:hover {
+  color: #e2e8f0 !important;
+}
+
+.maplibregl-ctrl-bottom-right {
+  bottom: 6px !important;
+  right: 10px !important;
+}

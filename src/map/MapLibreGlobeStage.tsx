@@ -1,0 +1,2083 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as maplibregl from 'maplibre-gl';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
+import { AnimatePresence, motion } from 'motion/react';
+
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
+import {
+  AppLanguage,
+  MapRegionSelection,
+  OverlayLayerId,
+  PolityPhase,
+  ProjectionMode,
+  RegionDrawToolMode,
+  SelectedEntity,
+  SpaceStage,
+  SpeciesDiscovery,
+  TimeRangeSelection,
+} from '../types/history';
+import {
+  formatYearByLang,
+  localizePolity,
+  localizeSpecies,
+  UI_TEXT,
+} from '../i18n/translations';
+import { ATHENS_MORTALITY_CATASTROPHES } from '../data/athensClassicalData';
+import {
+  clamp,
+  computeMortalityEventEnvelope,
+  densifyAndSliceWaypoints,
+  getActiveMortalityCatastrophes,
+  getActivePolityPhase,
+  getActiveSpeciesDiscoveries,
+  getActiveTransportRoutes,
+  smootherstep01,
+} from '../utils/geoMath';
+import {
+  bboxToPolygonRing,
+  computeCircleBBox,
+  createGeodesicCircleRing,
+  haversineDistanceKm,
+} from '../utils/regionSelector';
+import {
+  computeMortalityThermalPoints,
+  computeNightLightPixels,
+  computeNightLightThermalPoints,
+  computePopulationThermalPoints,
+} from '../utils/pixelLayers';
+import { useOsmResolvedTerritories } from '../services/osmBoundaryService';
+import {
+  buildGlobeSkySpec,
+  buildOfflineDarkMatterStyle,
+  CARTO_DARK_MATTER_STYLE_URL,
+  sanitizeCartoDarkMatterStyle,
+} from './cartoStyleBuilder';
+import { HistoricalFlagSvg } from '../components/HistoricalFlagSvg';
+
+interface MapLibreGlobeStageProps {
+  language: AppLanguage;
+  currentYear: number;
+  selectedRange: TimeRangeSelection;
+  activeLayers: OverlayLayerId[];
+  projectionMode: ProjectionMode;
+  selectedRegion: MapRegionSelection | null;
+  drawToolMode: RegionDrawToolMode;
+  cameraCommand: { id: number; kind: 'zoom_in' | 'zoom_out' | 'reset_north' } | null;
+  onSpaceStageChange: (stage: SpaceStage, bodyId?: string) => void;
+  onSelectEntity: (entity: SelectedEntity | null) => void;
+  onSelectRegion: (region: MapRegionSelection | null) => void;
+  onFinishDrawTool: () => void;
+  onHoverCoordsChange?: (coords: [number, number] | null) => void;
+}
+
+interface ProjectedAnchor {
+  x: number;
+  y: number;
+  visible: boolean;
+}
+
+interface ProjectedSpeciesBubble {
+  species: SpeciesDiscovery;
+  anchorX: number;
+  anchorY: number;
+  x: number;
+  y: number;
+  visible: boolean;
+}
+
+type FadeableLayerKey = 'pop' | 'night' | 'routes' | 'mort' | 'species';
+
+function createRouteArrowImageData(): { width: number; height: number; data: Uint8Array } {
+  const size = 28;
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext('2d')!;
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(24, 14);
+  ctx.lineTo(6, 5);
+  ctx.lineTo(11.5, 14);
+  ctx.lineTo(6, 23);
+  ctx.closePath();
+  ctx.fill();
+  const img = ctx.getImageData(0, 0, size, size);
+  return { width: size, height: size, data: new Uint8Array(img.data.buffer) };
+}
+
+/**
+ * Checks whether [lon, lat] is on the front-facing hemisphere of the 3D Globe relative to map center.
+ */
+function isFrontHemisphere(
+  pointLon: number,
+  pointLat: number,
+  centerLon: number,
+  centerLat: number,
+): boolean {
+  const rad = Math.PI / 180;
+  const lat1 = pointLat * rad;
+  const lat2 = centerLat * rad;
+  const dLon = (pointLon - centerLon) * rad;
+  const cosAngle =
+    Math.sin(lat1) * Math.sin(lat2) + Math.cos(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return cosAngle > 0.14;
+}
+
+const EMPTY_FC = {
+  type: 'FeatureCollection' as const,
+  features: [] as any[],
+};
+
+export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
+  language,
+  currentYear,
+  selectedRange,
+  activeLayers,
+  projectionMode,
+  selectedRegion,
+  drawToolMode,
+  cameraCommand,
+  onSpaceStageChange,
+  onSelectEntity,
+  onSelectRegion,
+  onFinishDrawTool,
+  onHoverCoordsChange,
+}) => {
+  const ui = UI_TEXT[language];
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const layersReadyRef = useRef<boolean>(false);
+  const baseLayerIdsRef = useRef<{ landuseIds: string[]; symbolIds: string[] }>({
+    landuseIds: [],
+    symbolIds: [],
+  });
+
+  const [flagOverlay, setFlagOverlay] = useState<ProjectedAnchor | null>(null);
+  const [speciesBubbles, setSpeciesBubbles] = useState<ProjectedSpeciesBubble[]>([]);
+  const [dragPreview, setDragPreview] = useState<{
+    startX: number;
+    startY: number;
+    curX: number;
+    curY: number;
+  } | null>(null);
+
+  const hasSpeciesLayer = activeLayers.includes('species_discovery');
+  const hasSpaceLayer = activeLayers.includes('space_race');
+
+  const activePolity: PolityPhase | null = useMemo(
+    () => getActivePolityPhase(currentYear),
+    [currentYear],
+  );
+  const { activeTerritories } = useOsmResolvedTerritories(currentYear);
+  const activeSpecies = useMemo(
+    () => (hasSpeciesLayer ? getActiveSpeciesDiscoveries(currentYear, selectedRange) : []),
+    [currentYear, selectedRange, hasSpeciesLayer],
+  );
+
+  const latestRef = useRef({
+    currentYear,
+    selectedRange,
+    activeLayers,
+    projectionMode,
+    selectedRegion,
+    drawToolMode,
+    activePolity,
+    activeTerritories,
+    activeSpecies,
+    onSpaceStageChange,
+    onSelectEntity,
+    onSelectRegion,
+    onHoverCoordsChange,
+  });
+  latestRef.current = {
+    currentYear,
+    selectedRange,
+    activeLayers,
+    projectionMode,
+    selectedRegion,
+    drawToolMode,
+    activePolity,
+    activeTerritories,
+    activeSpecies,
+    onSpaceStageChange,
+    onSelectEntity,
+    onSelectRegion,
+    onHoverCoordsChange,
+  };
+
+  const syncApiRef = useRef<{
+    syncDataLayers: () => void;
+    syncProjectedOverlays: () => void;
+    syncThemePaint: () => void;
+  } | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let cancelled = false;
+    let routeAnimRaf = 0;
+    let layerFadeRaf = 0;
+    let mortalityAnimTimer = 0;
+    let hoverRaf = 0;
+    let moveRaf = 0;
+
+    const knownOpenRoutes = new Set<string>();
+    const routeAnimStartMs = new Map<string, number>();
+    const displayedMortalityEnv = new Map<string, number>();
+    const mortStartEnv = new Map<string, number>();
+    const mortTargetEnv = new Map<string, number>();
+    let mortTweenStartMs = 0;
+    let mortalityEnvInitialized = false;
+    let prevSyncedYear: number | null = null;
+    const lastPaintCache = new Map<string, number | string>();
+
+    // Wall-clock C² quintic GPU cross-fade state (0.0 -> 1.0 over 280ms; 0% idle CPU once settled)
+    const layerFadeCurrent: Record<FadeableLayerKey, number> = {
+      pop: 0,
+      night: 0,
+      routes: 0,
+      mort: 0,
+      species: 0,
+    };
+    const layerFadeStart: Record<FadeableLayerKey, number> = {
+      pop: 0,
+      night: 0,
+      routes: 0,
+      mort: 0,
+      species: 0,
+    };
+    const layerFadeTarget: Record<FadeableLayerKey, number> = {
+      pop: 0,
+      night: 0,
+      routes: 0,
+      mort: 0,
+      species: 0,
+    };
+    const layerFadeStartMs: Record<FadeableLayerKey, number> = {
+      pop: 0,
+      night: 0,
+      routes: 0,
+      mort: 0,
+      species: 0,
+    };
+
+    const initialStyle = buildOfflineDarkMatterStyle(
+      latestRef.current.activeLayers.includes('night_lights'),
+      latestRef.current.projectionMode === '3d' ? 'globe' : 'mercator',
+    );
+
+    const map = new maplibregl.Map({
+      container,
+      style: initialStyle,
+      center: [23.8, 37.6],
+      zoom: 3.55,
+      pitch: latestRef.current.projectionMode === '3d' ? 16 : 0,
+      bearing: 0,
+      minZoom: 1.15,
+      maxZoom: 12,
+      fadeDuration: 0,
+      attributionControl: false,
+      canvasContextAttributes: {
+        preserveDrawingBuffer: true,
+        antialias: true,
+      },
+    });
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+    mapRef.current = map;
+
+    function syncProjectedOverlays() {
+      if (cancelled) return;
+      const {
+        projectionMode: proj,
+        activePolity: pol,
+        activeSpecies: spList,
+      } = latestRef.current;
+
+      const w = container?.clientWidth || window.innerWidth;
+      const h = container?.clientHeight || window.innerHeight;
+      const center = map.getCenter();
+
+      if (pol) {
+        const [lon, lat] = pol.capitalCoords;
+        const visible =
+          proj === '2d' || isFrontHemisphere(lon, lat, center.lng, center.lat);
+        const pt = map.project([lon, lat]);
+        setFlagOverlay({
+          x: pt.x,
+          y: pt.y,
+          visible: visible && pt.x >= -60 && pt.x <= w + 60 && pt.y >= -60 && pt.y <= h + 60,
+        });
+      } else {
+        setFlagOverlay(null);
+      }
+
+      if (spList.length > 0) {
+        const raw = spList.map((sp) => {
+          const [lon, lat] = sp.coords;
+          const visible =
+            proj === '2d' || isFrontHemisphere(lon, lat, center.lng, center.lat);
+          const pt = map.project([lon, lat]);
+          return {
+            species: sp,
+            anchorX: pt.x,
+            anchorY: pt.y,
+            x: pt.x,
+            y: pt.y - 26,
+            visible: visible && pt.x >= 20 && pt.x <= w - 20 && pt.y >= 40 && pt.y <= h - 40,
+          };
+        });
+
+        const vis = raw
+          .filter((b) => b.visible)
+          .sort((a, b) => a.anchorY - b.anchorY || a.anchorX - b.anchorX);
+
+        for (let i = 0; i < vis.length; i++) {
+          for (let j = 0; j < i; j++) {
+            if (Math.abs(vis[i].x - vis[j].x) < 244 && Math.abs(vis[i].y - vis[j].y) < 68) {
+              vis[i].x = clamp(
+                vis[i].anchorX + (i % 2 === 1 ? 142 : -142),
+                136,
+                w - 136,
+              );
+            }
+          }
+          for (let j = 0; j < i; j++) {
+            if (Math.abs(vis[i].x - vis[j].x) < 244 && Math.abs(vis[i].y - vis[j].y) < 68) {
+              vis[i].y = clamp(vis[j].y + 70, 96, h - 156);
+            }
+          }
+        }
+
+        setSpeciesBubbles(raw);
+      } else {
+        setSpeciesBubbles([]);
+      }
+    }
+
+    function syncThemePaint() {
+      if (!layersReadyRef.current || cancelled) return;
+      const isNight = latestRef.current.activeLayers.includes('night_lights');
+      const landColor = isNight ? '#0b0e15' : '#181d27';
+      const landCoverColor = isNight ? '#0d111a' : '#1c222e';
+      const waterColor = isNight ? '#04060b' : '#090d16';
+      const riverColor = isNight ? '#0e1726' : '#162233';
+      const coastlineColor = isNight ? '#1b2638' : '#2a364b';
+
+      const styleLayers = map.getStyle()?.layers || [];
+      const existingIds = new Set(styleLayers.map((l) => l.id));
+
+      if (existingIds.has('background')) {
+        map.setPaintProperty('background', 'background-color', landColor);
+      }
+      if (existingIds.has('ne-ocean-base')) {
+        map.setPaintProperty('ne-ocean-base', 'background-color', waterColor);
+      }
+      if (existingIds.has('ne-land-fill-underlay')) {
+        map.setPaintProperty('ne-land-fill-underlay', 'fill-color', landColor);
+      }
+      if (existingIds.has('ne-land-coast-underlay')) {
+        map.setPaintProperty('ne-land-coast-underlay', 'line-color', coastlineColor);
+      }
+      if (existingIds.has('water')) {
+        map.setPaintProperty('water', 'fill-color', waterColor);
+        map.setPaintProperty('water', 'fill-opacity', 0.9995);
+      }
+      if (existingIds.has('waterway')) {
+        map.setPaintProperty('waterway', 'line-color', riverColor);
+      }
+      if (existingIds.has('carto-water-coastline-crisp')) {
+        map.setPaintProperty('carto-water-coastline-crisp', 'line-color', coastlineColor);
+      }
+      for (const lid of baseLayerIdsRef.current.landuseIds) {
+        if (existingIds.has(lid)) {
+          map.setPaintProperty(lid, 'fill-color', landCoverColor);
+        }
+      }
+      for (const sid of baseLayerIdsRef.current.symbolIds) {
+        if (existingIds.has(sid)) {
+          map.setPaintProperty(
+            sid,
+            'text-color',
+            isNight ? 'rgba(100, 116, 139, 0.34)' : 'rgba(148, 163, 184, 0.48)',
+          );
+        }
+      }
+
+      map.setSky(buildGlobeSkySpec(isNight));
+    }
+
+    function setPaintIfChanged(layerId: string, prop: string, val: number) {
+      if (!map.getLayer(layerId)) return;
+      const cacheKey = `p:${layerId}:${prop}`;
+      if (lastPaintCache.get(cacheKey) === val) return;
+      lastPaintCache.set(cacheKey, val);
+      map.setPaintProperty(layerId, prop as any, val);
+    }
+
+    function setVisIfChanged(layerId: string, visible: boolean) {
+      if (!map.getLayer(layerId)) return;
+      const v = visible ? 'visible' : 'none';
+      const cacheKey = `v:${layerId}`;
+      if (lastPaintCache.get(cacheKey) === v) return;
+      lastPaintCache.set(cacheKey, v);
+      map.setLayoutProperty(layerId, 'visibility', v);
+    }
+
+    function applyLayerFadePaint() {
+      if (!layersReadyRef.current || cancelled) return;
+      const layers = latestRef.current.activeLayers;
+      const hasMort = layers.includes('mortality_catastrophe');
+      const hasNight = layers.includes('night_lights');
+      const hasPop = layers.includes('population_density');
+
+      // Smart multi-layer opacity balancing when multiple surface heatmaps are stacked simultaneously
+      const popMax = hasMort ? 0.78 : hasNight ? 0.82 : 0.95;
+      const nightMax = hasPop ? 0.84 : 0.95;
+      const mortMax = 0.96;
+
+      const popVal = +(layerFadeCurrent.pop * popMax).toFixed(3);
+      setVisIfChanged('pop-heatmap-layer', popVal > 0);
+      if (popVal > 0) setPaintIfChanged('pop-heatmap-layer', 'heatmap-opacity', popVal);
+
+      const nightHeatVal = +(layerFadeCurrent.night * nightMax).toFixed(3);
+      setVisIfChanged('night-heatmap-layer', nightHeatVal > 0);
+      setVisIfChanged('night-lights-halo', nightHeatVal > 0);
+      setVisIfChanged('night-lights-core', nightHeatVal > 0);
+      if (nightHeatVal > 0) {
+        setPaintIfChanged('night-heatmap-layer', 'heatmap-opacity', nightHeatVal);
+        setPaintIfChanged('night-lights-halo', 'circle-opacity', +(layerFadeCurrent.night * 0.28).toFixed(3));
+        setPaintIfChanged('night-lights-core', 'circle-opacity', +(layerFadeCurrent.night * 0.95).toFixed(3));
+      }
+
+      const routeVal = +(layerFadeCurrent.routes * 0.96).toFixed(3);
+      setVisIfChanged('routes-glow', routeVal > 0);
+      setVisIfChanged('routes-core', routeVal > 0);
+      setVisIfChanged('routes-arrows', routeVal > 0);
+      if (routeVal > 0) {
+        setPaintIfChanged('routes-glow', 'line-opacity', +(layerFadeCurrent.routes * 0.22).toFixed(3));
+        setPaintIfChanged('routes-core', 'line-opacity', routeVal);
+        setPaintIfChanged('routes-arrows', 'icon-opacity', +(layerFadeCurrent.routes * 0.98).toFixed(3));
+      }
+
+      const mortVal = +(layerFadeCurrent.mort * mortMax).toFixed(3);
+      setVisIfChanged('mortality-heatmap-layer', mortVal > 0);
+      setVisIfChanged('mortality-epicenter-ring', mortVal > 0);
+      if (mortVal > 0) {
+        setPaintIfChanged('mortality-heatmap-layer', 'heatmap-opacity', mortVal);
+      }
+
+      const spAlpha = +(layerFadeCurrent.species * 0.96).toFixed(3);
+      setVisIfChanged('species-points-layer', spAlpha > 0);
+      if (spAlpha > 0) {
+        setPaintIfChanged('species-points-layer', 'circle-opacity', spAlpha);
+        setPaintIfChanged('species-points-layer', 'circle-stroke-opacity', spAlpha);
+      }
+
+      // Smoothly modulate baseline geopolitical borders as surface thermal layers fade in/out
+      const surfaceBlend = Math.max(
+        layerFadeCurrent.pop,
+        layerFadeCurrent.mort,
+        layerFadeCurrent.night * 0.85,
+      );
+      setPaintIfChanged('polity-stroke', 'line-opacity', +(0.96 - surfaceBlend * 0.42).toFixed(3));
+      setPaintIfChanged('polity-casing', 'line-opacity', +(0.90 - surfaceBlend * 0.46).toFixed(3));
+      setPaintIfChanged('polity-inner-ribbon', 'line-opacity', +(0.28 - surfaceBlend * 0.18).toFixed(3));
+    }
+
+    function cleanupZeroedSources() {
+      if (layerFadeTarget.pop === 0 && layerFadeCurrent.pop === 0) {
+        (map.getSource('pop-thermal-source') as maplibregl.GeoJSONSource | undefined)?.setData(
+          EMPTY_FC,
+        );
+      }
+      if (layerFadeTarget.night === 0 && layerFadeCurrent.night === 0) {
+        (map.getSource('night-thermal-source') as maplibregl.GeoJSONSource | undefined)?.setData(
+          EMPTY_FC,
+        );
+        (map.getSource('night-lights-source') as maplibregl.GeoJSONSource | undefined)?.setData(
+          EMPTY_FC,
+        );
+      }
+      if (layerFadeTarget.routes === 0 && layerFadeCurrent.routes === 0) {
+        (map.getSource('routes-source') as maplibregl.GeoJSONSource | undefined)?.setData(EMPTY_FC);
+      }
+      if (layerFadeTarget.mort === 0 && layerFadeCurrent.mort === 0) {
+        mortalityEnvInitialized = false;
+        displayedMortalityEnv.clear();
+        mortStartEnv.clear();
+        mortTargetEnv.clear();
+        (
+          map.getSource('mortality-thermal-source') as maplibregl.GeoJSONSource | undefined
+        )?.setData(EMPTY_FC);
+        (
+          map.getSource('mortality-epicenters-source') as maplibregl.GeoJSONSource | undefined
+        )?.setData(EMPTY_FC);
+      }
+      if (layerFadeTarget.species === 0 && layerFadeCurrent.species === 0) {
+        (map.getSource('species-points-source') as maplibregl.GeoJSONSource | undefined)?.setData(
+          EMPTY_FC,
+        );
+      }
+    }
+
+    function scheduleLayerFade() {
+      if (cancelled || !layersReadyRef.current) return;
+      if (layerFadeRaf) return;
+
+      const stepFadeFrame = (nowMs: number) => {
+        layerFadeRaf = 0;
+        if (cancelled || !layersReadyRef.current) return;
+
+        let anyMoving = false;
+        const keys: FadeableLayerKey[] = ['pop', 'night', 'routes', 'mort', 'species'];
+        for (const k of keys) {
+          const tgt = layerFadeTarget[k];
+          if (layerFadeCurrent[k] !== tgt) {
+            const rawT = clamp((nowMs - layerFadeStartMs[k]) / 280, 0, 1);
+            if (rawT >= 1) {
+              layerFadeCurrent[k] = tgt;
+            } else {
+              const eased = smootherstep01(rawT);
+              layerFadeCurrent[k] = layerFadeStart[k] + (tgt - layerFadeStart[k]) * eased;
+              anyMoving = true;
+            }
+          }
+        }
+
+        applyLayerFadePaint();
+
+        if (anyMoving) {
+          layerFadeRaf = requestAnimationFrame(stepFadeFrame);
+        } else {
+          cleanupZeroedSources();
+        }
+      };
+
+      layerFadeRaf = requestAnimationFrame(stepFadeFrame);
+    }
+
+    function updateRoutesSource(nowMs: number) {
+      const src = map.getSource('routes-source') as maplibregl.GeoJSONSource | undefined;
+      if (!src) return;
+
+      const { currentYear: yr, activeLayers: layers } = latestRef.current;
+      if (!layers.includes('transport_routes')) {
+        // Keep last geometry during GPU fade-out; cleanupZeroedSources clears once opacity hits 0
+        return;
+      }
+
+      const activeRoutes = getActiveTransportRoutes(yr);
+      let anyStillAnimating = false;
+
+      const features = activeRoutes.map(({ route, annualTrips, colorHex }) => {
+        const animStart = routeAnimStartMs.get(route.id);
+        let progress = 1.0;
+        if (animStart !== undefined) {
+          progress = clamp((nowMs - animStart) / 760, 0.05, 1.0);
+          if (progress < 1.0) {
+            anyStillAnimating = true;
+          } else {
+            routeAnimStartMs.delete(route.id);
+          }
+        }
+        const coords = densifyAndSliceWaypoints(route.waypoints, progress, 22);
+        return {
+          type: 'Feature' as const,
+          properties: {
+            id: route.id,
+            nameZh: route.nameZh,
+            annualTrips,
+            colorHex,
+          },
+          geometry: {
+            type: 'LineString' as const,
+            coordinates: coords,
+          },
+        };
+      });
+
+      src.setData({
+        type: 'FeatureCollection',
+        features,
+      });
+
+      if (anyStillAnimating && !cancelled) {
+        cancelAnimationFrame(routeAnimRaf);
+        routeAnimRaf = requestAnimationFrame((ts) => updateRoutesSource(ts));
+      }
+    }
+
+    function syncDataLayers() {
+      if (!layersReadyRef.current || cancelled) return;
+      const {
+        currentYear: yr,
+        activeLayers: layers,
+        activePolity: pol,
+        activeTerritories: territories,
+        activeSpecies: spList,
+      } = latestRef.current;
+
+      const hasPop = layers.includes('population_density');
+      const hasNight = layers.includes('night_lights');
+      const hasRoutes = layers.includes('transport_routes');
+      const hasSpecies = layers.includes('species_discovery');
+      const hasMort = layers.includes('mortality_catastrophe');
+      const isThermalOverlay = hasMort || hasPop;
+
+      // Update wall-clock GPU cross-fade targets for any changed thematic layer
+      const fadeNow = performance.now();
+      const desiredTargets: Record<FadeableLayerKey, number> = {
+        pop: hasPop ? 1 : 0,
+        night: hasNight ? 1 : 0,
+        routes: hasRoutes ? 1 : 0,
+        mort: hasMort ? 1 : 0,
+        species: hasSpecies ? 1 : 0,
+      };
+      for (const k of ['pop', 'night', 'routes', 'mort', 'species'] as FadeableLayerKey[]) {
+        if (layerFadeTarget[k] !== desiredTargets[k]) {
+          layerFadeStart[k] = layerFadeCurrent[k];
+          layerFadeTarget[k] = desiredTargets[k];
+          layerFadeStartMs[k] = fadeNow;
+        }
+      }
+
+      // 1. Always-present Geopolitical Borders & Representative Color Choropleth (clipped 100% by HD CARTO `water`)
+      const politySrc = map.getSource('polity-source') as maplibregl.GeoJSONSource | undefined;
+      const polityBoundarySrc = map.getSource('polity-boundary-source') as
+        | maplibregl.GeoJSONSource
+        | undefined;
+      if (politySrc && polityBoundarySrc) {
+        if (pol && territories.length > 0) {
+          politySrc.setData({
+            type: 'FeatureCollection',
+            features: territories.map((t) => {
+              const baseOpacity =
+                t.tier === 'metropolis' ? 0.62 : t.tier === 'cleruchy' ? 0.54 : 0.45;
+              const effectiveOpacity = isThermalOverlay
+                ? +(baseOpacity * 0.26).toFixed(3)
+                : hasNight
+                  ? +(baseOpacity * 0.34).toFixed(3)
+                  : baseOpacity;
+              return {
+                type: 'Feature',
+                properties: {
+                  id: t.id,
+                  nameZh: t.nameZh,
+                  tier: t.tier,
+                  fillColor: pol.representativeColor,
+                  borderColor: pol.borderColor,
+                  fillOpacity: effectiveOpacity,
+                },
+                geometry: t.geometry as any,
+              };
+            }),
+          });
+
+          polityBoundarySrc.setData({
+            type: 'FeatureCollection',
+            features: territories.map((t) => ({
+              type: 'Feature',
+              properties: {
+                id: t.id,
+                nameZh: t.nameZh,
+                isCore: t.tier !== 'allied_tribute',
+                fillColor: pol.representativeColor,
+                borderColor: pol.borderColor,
+              },
+              geometry: t.outerBoundary as any,
+            })),
+          });
+        } else {
+          politySrc.setData(EMPTY_FC);
+          polityBoundarySrc.setData(EMPTY_FC);
+        }
+      }
+
+      // 2. Population Density Continuous GPU Thermal Field (15–160+ persons/km², Blue -> Deep Brown)
+      const popSrc = map.getSource('pop-thermal-source') as maplibregl.GeoJSONSource | undefined;
+      if (popSrc && hasPop) {
+        const emitters = computePopulationThermalPoints(yr);
+        popSrc.setData({
+          type: 'FeatureCollection',
+          features: emitters.map((p, idx) => ({
+            type: 'Feature',
+            properties: {
+              id: idx,
+              weight: p.weight,
+              tier: p.tier,
+            },
+            geometry: {
+              type: 'Point',
+              coordinates: [p.lon, p.lat],
+            },
+          })),
+        });
+      }
+
+      // 3. Nighttime Illumination: Population-Aligned Settlement Radiance Heatmap + Pinpoint Urban/Harbor Lamps
+      const nightThermalSrc = map.getSource(
+        'night-thermal-source',
+      ) as maplibregl.GeoJSONSource | undefined;
+      const nightSrc = map.getSource('night-lights-source') as maplibregl.GeoJSONSource | undefined;
+      if (nightThermalSrc && nightSrc && hasNight) {
+        const thermalLights = computeNightLightThermalPoints(yr);
+        const pinpointLights = computeNightLightPixels(yr);
+        nightThermalSrc.setData({
+          type: 'FeatureCollection',
+          features: thermalLights.map((p, idx) => ({
+            type: 'Feature',
+            properties: {
+              id: idx,
+              weight: p.weight,
+            },
+            geometry: {
+              type: 'Point',
+              coordinates: [p.lon, p.lat],
+            },
+          })),
+        });
+        nightSrc.setData({
+          type: 'FeatureCollection',
+          features: pinpointLights.map((p, idx) => ({
+            type: 'Feature',
+            properties: {
+              id: idx,
+              color: p.hex,
+              radius: p.sizePx,
+            },
+            geometry: {
+              type: 'Point',
+              coordinates: [p.lon, p.lat],
+            },
+          })),
+        });
+      }
+
+      // 4. Transport Routes (Start-to-End Catmull-Rom Maritime Reveal + Directional Arrows + White->Deep Red)
+      if (hasRoutes) {
+        const activeRoutes = getActiveTransportRoutes(yr);
+        const currentRouteIds = new Set(activeRoutes.map((r) => r.route.id));
+        const nowMs = performance.now();
+        if (prevSyncedYear !== null && prevSyncedYear !== yr) {
+          for (const { route } of activeRoutes) {
+            if (!knownOpenRoutes.has(route.id) || yr === route.openedYear) {
+              routeAnimStartMs.set(route.id, nowMs);
+            }
+          }
+        }
+        knownOpenRoutes.clear();
+        currentRouteIds.forEach((id) => knownOpenRoutes.add(id));
+        updateRoutesSource(nowMs);
+      } else {
+        cancelAnimationFrame(routeAnimRaf);
+      }
+      prevSyncedYear = yr;
+
+      // 5. Mortality Catastrophe Quantitative Infrared Thermal Field + Silky Per-Event Fade-In / Post-Event Fade-Out
+      const mortSrc = map.getSource(
+        'mortality-thermal-source',
+      ) as maplibregl.GeoJSONSource | undefined;
+      const mortEpicenterSrc = map.getSource(
+        'mortality-epicenters-source',
+      ) as maplibregl.GeoJSONSource | undefined;
+
+      const stepMortalityFade = () => {
+        if (cancelled) return;
+        window.clearTimeout(mortalityAnimTimer);
+        mortalityAnimTimer = 0;
+
+        const mSrc = map.getSource('mortality-thermal-source') as
+          | maplibregl.GeoJSONSource
+          | undefined;
+        const eSrc = map.getSource('mortality-epicenters-source') as
+          | maplibregl.GeoJSONSource
+          | undefined;
+        if (!mSrc || !eSrc) return;
+
+        const {
+          currentYear: curY,
+          selectedRange: curRange,
+          activeLayers: curLayers,
+        } = latestRef.current;
+
+        if (!curLayers.includes('mortality_catastrophe')) {
+          return;
+        }
+
+        const nowMs = performance.now();
+        const rawT = mortalityEnvInitialized
+          ? clamp((nowMs - mortTweenStartMs) / 300, 0, 1)
+          : 1.0;
+        const eased = smootherstep01(rawT);
+        const stillTransitioning = rawT < 1.0;
+
+        for (const ev of ATHENS_MORTALITY_CATASTROPHES) {
+          const targetEnv = mortTargetEnv.get(ev.id) ?? 0;
+          const startEnv = mortStartEnv.get(ev.id) ?? targetEnv;
+          const nextEnv = stillTransitioning
+            ? startEnv + (targetEnv - startEnv) * eased
+            : targetEnv;
+          if (nextEnv <= 0.006 && targetEnv === 0) {
+            displayedMortalityEnv.delete(ev.id);
+          } else {
+            displayedMortalityEnv.set(ev.id, nextEnv);
+          }
+        }
+        mortalityEnvInitialized = true;
+
+        const emitters = computeMortalityThermalPoints(curY, curRange, displayedMortalityEnv);
+        const hitCats = getActiveMortalityCatastrophes(curY, false, curRange);
+
+        mSrc.setData({
+          type: 'FeatureCollection',
+          features: emitters.map((p, idx) => ({
+            type: 'Feature',
+            properties: {
+              id: idx,
+              weight: p.weight,
+              tier: p.tier,
+            },
+            geometry: {
+              type: 'Point',
+              coordinates: [p.lon, p.lat],
+            },
+          })),
+        });
+
+        eSrc.setData({
+          type: 'FeatureCollection',
+          features: hitCats.map((c) => ({
+            type: 'Feature',
+            properties: { id: c.id },
+            geometry: {
+              type: 'Point',
+              coordinates: c.coords,
+            },
+          })),
+        });
+
+        if (stillTransitioning && !cancelled) {
+          mortalityAnimTimer = window.setTimeout(stepMortalityFade, 55);
+        }
+      };
+
+      if (mortSrc && mortEpicenterSrc) {
+        if (hasMort) {
+          let targetsChanged = !mortalityEnvInitialized;
+          for (const ev of ATHENS_MORTALITY_CATASTROPHES) {
+            const nextTgt = computeMortalityEventEnvelope(ev, yr, latestRef.current.selectedRange);
+            const prevTgt = mortTargetEnv.get(ev.id) ?? 0;
+            if (Math.abs(nextTgt - prevTgt) > 0.002) {
+              targetsChanged = true;
+            }
+            mortStartEnv.set(ev.id, displayedMortalityEnv.get(ev.id) ?? (mortalityEnvInitialized ? 0 : nextTgt));
+            mortTargetEnv.set(ev.id, nextTgt);
+          }
+          if (targetsChanged) {
+            mortTweenStartMs = performance.now();
+            stepMortalityFade();
+          }
+        } else {
+          window.clearTimeout(mortalityAnimTimer);
+          mortalityAnimTimer = 0;
+        }
+      }
+
+      // 6. Species Discovery Anchor Beacons
+      const spSrc = map.getSource('species-points-source') as maplibregl.GeoJSONSource | undefined;
+      if (spSrc && hasSpecies) {
+        spSrc.setData({
+          type: 'FeatureCollection',
+          features: spList.map((s) => ({
+            type: 'Feature',
+            properties: { id: s.id },
+            geometry: {
+              type: 'Point',
+              coordinates: s.coords,
+            },
+          })),
+        });
+      }
+
+      // 7. Selected Region Highlight Overlay (Territory / BBox / Geodesic Circle)
+      const selSrc = map.getSource('selected-region-source') as
+        | maplibregl.GeoJSONSource
+        | undefined;
+      const selReg = latestRef.current.selectedRegion;
+      if (selSrc) {
+        if (!selReg) {
+          selSrc.setData(EMPTY_FC);
+        } else if (selReg.kind === 'territory') {
+          const liveTerr = territories.find((t) => t.id === selReg.territoryId);
+          if (liveTerr) {
+            selSrc.setData({
+              type: 'FeatureCollection',
+              features: [
+                {
+                  type: 'Feature',
+                  properties: { kind: 'territory' },
+                  geometry: liveTerr.geometry as any,
+                },
+              ],
+            });
+          } else if (selReg.polygonRings && selReg.polygonRings.length > 0) {
+            selSrc.setData({
+              type: 'FeatureCollection',
+              features: [
+                {
+                  type: 'Feature',
+                  properties: { kind: 'territory' },
+                  geometry: {
+                    type: 'MultiPolygon',
+                    coordinates: selReg.polygonRings.map((r) => [r]),
+                  },
+                },
+              ],
+            });
+          } else {
+            selSrc.setData({
+              type: 'FeatureCollection',
+              features: [
+                {
+                  type: 'Feature',
+                  properties: { kind: 'territory' },
+                  geometry: {
+                    type: 'Polygon',
+                    coordinates: [bboxToPolygonRing(selReg.bbox)],
+                  },
+                },
+              ],
+            });
+          }
+        } else if (selReg.kind === 'bbox') {
+          selSrc.setData({
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                properties: { kind: 'bbox' },
+                geometry: {
+                  type: 'Polygon',
+                  coordinates: [bboxToPolygonRing(selReg.bbox)],
+                },
+              },
+            ],
+          });
+        } else if (selReg.kind === 'circle') {
+          selSrc.setData({
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                properties: { kind: 'circle' },
+                geometry: {
+                  type: 'Polygon',
+                  coordinates: [createGeodesicCircleRing(selReg.center, selReg.radiusKm, 72)],
+                },
+              },
+            ],
+          });
+        }
+      }
+
+      // Drive GPU paint-property cross-fade for newly toggled or deselected layers
+      scheduleLayerFade();
+      syncProjectedOverlays();
+    }
+
+    function registerOverlaySourcesAndLayers() {
+      if (cancelled) return;
+      lastPaintCache.clear();
+      mortalityEnvInitialized = false;
+
+      const currentLayers = map.getStyle()?.layers || [];
+      baseLayerIdsRef.current = {
+        landuseIds: currentLayers
+          .filter((l: any) => l.type === 'fill' && l['source-layer'] === 'landuse')
+          .map((l) => l.id),
+        symbolIds: currentLayers.filter((l) => l.type === 'symbol').map((l) => l.id),
+      };
+
+      if (!map.hasImage('route-arrow')) {
+        map.addImage('route-arrow', createRouteArrowImageData(), {
+          sdf: true,
+          pixelRatio: 2,
+        });
+      }
+
+      const precisionSources: Array<{ name: string; tolerance: number }> = [
+        { name: 'polity-source', tolerance: 0.12 },
+        { name: 'polity-boundary-source', tolerance: 0.12 },
+        { name: 'pop-thermal-source', tolerance: 0.15 },
+        { name: 'night-thermal-source', tolerance: 0.15 },
+        { name: 'night-lights-source', tolerance: 0.35 },
+        { name: 'routes-source', tolerance: 0.08 },
+        { name: 'mortality-thermal-source', tolerance: 0.15 },
+        { name: 'mortality-epicenters-source', tolerance: 0.25 },
+        { name: 'species-points-source', tolerance: 0.25 },
+        { name: 'selected-region-source', tolerance: 0.08 },
+      ];
+      for (const { name, tolerance } of precisionSources) {
+        if (!map.getSource(name)) {
+          map.addSource(name, {
+            type: 'geojson',
+            data: EMPTY_FC,
+            maxzoom: 12,
+            tolerance,
+          });
+        }
+      }
+
+      // CRITICAL CARTOGRAPHIC COMPOSITING:
+      // Insert ALL Polity Fills, Polity Border Bands, Population Thermal Heatmap, Nighttime Radiance Heatmap,
+      // and Mortality Infrared Heatmap strictly BENEATH CARTO's `#090d16` / `#04060b` OpenStreetMap `water` vector layer!
+      const firstSymbolId = currentLayers.find((l) => l.type === 'symbol')?.id;
+      const waterLayerId = currentLayers.find((l) => l.id === 'water')?.id;
+      const beforeWaterOrSymbol = waterLayerId || firstSymbolId;
+
+      // 1A. Seam-free Sovereign / Allied Choropleth Glaze (clipped 100% by `water`)
+      if (!map.getLayer('polity-fill')) {
+        map.addLayer(
+          {
+            id: 'polity-fill',
+            type: 'fill',
+            source: 'polity-source',
+            paint: {
+              'fill-antialias': true,
+              'fill-color': ['get', 'fillColor'],
+              'fill-opacity': ['get', 'fillOpacity'],
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      // 2. Population Density Native GPU Thermal Heatmap (15 -> 160+ persons/km², Blue -> Deep Brown, clipped 100% by `water`)
+      if (!map.getLayer('pop-heatmap-layer')) {
+        map.addLayer(
+          {
+            id: 'pop-heatmap-layer',
+            type: 'heatmap',
+            source: 'pop-thermal-source',
+            maxzoom: 12,
+            paint: {
+              'heatmap-weight': ['get', 'weight'],
+              'heatmap-intensity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                0.085,
+                4,
+                0.112,
+                7,
+                0.158,
+                10,
+                0.42,
+                12,
+                0.62,
+              ],
+              'heatmap-radius': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                16,
+                4,
+                28,
+                7,
+                65,
+                10,
+                130,
+                12,
+                195,
+              ],
+              'heatmap-color': [
+                'interpolate',
+                ['linear'],
+                ['heatmap-density'],
+                0,
+                'rgba(37, 99, 235, 0)',
+                0.07,
+                'rgba(37, 99, 235, 0.48)',
+                0.22,
+                'rgba(59, 130, 246, 0.76)',
+                0.44,
+                'rgba(78, 134, 180, 0.85)',
+                0.64,
+                'rgba(166, 120, 70, 0.92)',
+                0.84,
+                'rgba(124, 63, 24, 0.96)',
+                1.0,
+                'rgba(68, 28, 10, 0.99)',
+              ],
+              'heatmap-opacity': 0,
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      // 3A. Nighttime Settlement & Industrial Radiance GPU Heatmap (mirroring population distribution, clipped 100% by `#04060b` night ocean)
+      if (!map.getLayer('night-heatmap-layer')) {
+        map.addLayer(
+          {
+            id: 'night-heatmap-layer',
+            type: 'heatmap',
+            source: 'night-thermal-source',
+            maxzoom: 12,
+            paint: {
+              'heatmap-weight': ['get', 'weight'],
+              'heatmap-intensity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                0.082,
+                4,
+                0.108,
+                7,
+                0.155,
+                10,
+                0.40,
+                12,
+                0.60,
+              ],
+              'heatmap-radius': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                15,
+                4,
+                26,
+                7,
+                60,
+                10,
+                122,
+                12,
+                182,
+              ],
+              'heatmap-color': [
+                'interpolate',
+                ['linear'],
+                ['heatmap-density'],
+                0,
+                'rgba(180, 83, 9, 0)',
+                0.07,
+                'rgba(180, 83, 9, 0.28)',
+                0.22,
+                'rgba(217, 119, 6, 0.56)',
+                0.45,
+                'rgba(245, 158, 11, 0.78)',
+                0.70,
+                'rgba(251, 191, 36, 0.91)',
+                0.90,
+                'rgba(254, 240, 138, 0.97)',
+                1.0,
+                'rgba(255, 251, 219, 0.99)',
+              ],
+              'heatmap-opacity': 0,
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      // 5A. Mortality Catastrophe Quantitative GPU Infrared Thermal Heatmap (sits atop pop/night beneath `water`)
+      if (!map.getLayer('mortality-heatmap-layer')) {
+        map.addLayer(
+          {
+            id: 'mortality-heatmap-layer',
+            type: 'heatmap',
+            source: 'mortality-thermal-source',
+            maxzoom: 12,
+            paint: {
+              'heatmap-weight': ['get', 'weight'],
+              'heatmap-intensity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                0.095,
+                4,
+                0.125,
+                7,
+                0.185,
+                10,
+                0.44,
+                12,
+                0.65,
+              ],
+              'heatmap-radius': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                13,
+                4,
+                22,
+                7,
+                46,
+                10,
+                98,
+                12,
+                152,
+              ],
+              'heatmap-color': [
+                'interpolate',
+                ['linear'],
+                ['heatmap-density'],
+                0,
+                'rgba(254, 226, 226, 0)',
+                0.05,
+                'rgba(254, 205, 211, 0.45)',
+                0.16,
+                'rgba(253, 164, 175, 0.78)',
+                0.28,
+                'rgba(251, 140, 152, 0.86)',
+                0.46,
+                'rgba(239, 68, 68, 0.91)',
+                0.66,
+                'rgba(190, 24, 32, 0.95)',
+                0.82,
+                'rgba(124, 10, 18, 0.98)',
+                1.0,
+                'rgba(68, 3, 9, 0.99)',
+              ],
+              'heatmap-opacity': 0,
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      // 1B. Engraved Atlas Inner Coastal & Frontier Ribbon (strictly beneath `water` so sea half is 100% clipped)
+      if (!map.getLayer('polity-inner-ribbon')) {
+        map.addLayer(
+          {
+            id: 'polity-inner-ribbon',
+            type: 'line',
+            source: 'polity-boundary-source',
+            layout: {
+              'line-cap': 'butt',
+              'line-join': 'miter',
+            },
+            paint: {
+              'line-color': ['get', 'borderColor'],
+              'line-width': ['interpolate', ['linear'], ['zoom'], 2, 4.4, 6, 8.2, 10, 12.5],
+              'line-opacity': 0.28,
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      // 1C. Dark Cartographic Frontier Casing (strictly beneath `water`)
+      if (!map.getLayer('polity-casing')) {
+        map.addLayer(
+          {
+            id: 'polity-casing',
+            type: 'line',
+            source: 'polity-boundary-source',
+            layout: {
+              'line-cap': 'butt',
+              'line-join': 'miter',
+            },
+            paint: {
+              'line-color': 'rgba(6, 9, 15, 0.88)',
+              'line-width': ['interpolate', ['linear'], ['zoom'], 2, 3.0, 6, 4.8, 10, 6.8],
+              'line-opacity': 0.90,
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      // 1D. Precision Surveyed Outer Frontier & Coastline Rim (strictly beneath `water` — zero sea overflow)
+      if (!map.getLayer('polity-stroke')) {
+        map.addLayer(
+          {
+            id: 'polity-stroke',
+            type: 'line',
+            source: 'polity-boundary-source',
+            layout: {
+              'line-cap': 'butt',
+              'line-join': 'miter',
+            },
+            paint: {
+              'line-color': ['get', 'borderColor'],
+              'line-width': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                ['case', ['get', 'isCore'], 2.6, 2.0],
+                6,
+                ['case', ['get', 'isCore'], 4.0, 3.1],
+                10,
+                ['case', ['get', 'isCore'], 5.4, 4.2],
+              ],
+              'line-opacity': 0.96,
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      // 3B. Nighttime Illumination Radial Bloom (above `water` for harbor beacons)
+      if (!map.getLayer('night-lights-halo')) {
+        map.addLayer({
+          id: 'night-lights-halo',
+          type: 'circle',
+          source: 'night-lights-source',
+          paint: {
+            'circle-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              2,
+              ['*', ['get', 'radius'], 1.4],
+              6,
+              ['*', ['get', 'radius'], 3.1],
+            ],
+            'circle-color': '#f59e0b',
+            'circle-blur': 1.15,
+            'circle-opacity': 0,
+          },
+        });
+      }
+      if (!map.getLayer('night-lights-core')) {
+        map.addLayer({
+          id: 'night-lights-core',
+          type: 'circle',
+          source: 'night-lights-source',
+          paint: {
+            'circle-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              2,
+              ['*', ['get', 'radius'], 0.42],
+              6,
+              ['*', ['get', 'radius'], 0.95],
+            ],
+            'circle-color': ['get', 'color'],
+            'circle-blur': 0.25,
+            'circle-opacity': 0,
+          },
+        });
+      }
+
+      // 4. Maritime Transport Routes (Catmull-Rom Sea Lanes + Directional Arrows above `#090d16` ocean)
+      if (!map.getLayer('routes-glow')) {
+        map.addLayer({
+          id: 'routes-glow',
+          type: 'line',
+          source: 'routes-source',
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
+          paint: {
+            'line-color': ['get', 'colorHex'],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 2, 4.8, 6, 8.2],
+            'line-opacity': 0,
+          },
+        });
+      }
+      if (!map.getLayer('routes-core')) {
+        map.addLayer({
+          id: 'routes-core',
+          type: 'line',
+          source: 'routes-source',
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
+          paint: {
+            'line-color': ['get', 'colorHex'],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 2, 1.8, 5, 2.7, 8, 3.8],
+            'line-opacity': 0,
+          },
+        });
+      }
+      if (!map.getLayer('routes-arrows')) {
+        map.addLayer({
+          id: 'routes-arrows',
+          type: 'symbol',
+          source: 'routes-source',
+          layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 56,
+            'icon-image': 'route-arrow',
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 2, 0.72, 5, 0.94, 8, 1.15],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+            'icon-rotation-alignment': 'map',
+          },
+          paint: {
+            'icon-color': ['get', 'colorHex'],
+            'icon-halo-color': 'rgba(5, 8, 15, 0.85)',
+            'icon-halo-width': 0.8,
+            'icon-opacity': 0,
+          },
+        });
+      }
+
+      // 5B. Invisible Interactive Hit Target for Mortality Catastrophe Inspector Popover
+      if (!map.getLayer('mortality-epicenter-ring')) {
+        map.addLayer({
+          id: 'mortality-epicenter-ring',
+          type: 'circle',
+          source: 'mortality-epicenters-source',
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, 14, 6, 30, 10, 56],
+            'circle-color': '#dc2626',
+            'circle-opacity': 0,
+            'circle-stroke-width': 0,
+          },
+        });
+      }
+
+      // 6. Species Discovery Coordinate Beacons
+      if (!map.getLayer('species-points-layer')) {
+        map.addLayer({
+          id: 'species-points-layer',
+          type: 'circle',
+          source: 'species-points-source',
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, 4.2, 6, 6.5],
+            'circle-color': '#10b981',
+            'circle-stroke-color': '#ecfdf5',
+            'circle-stroke-width': 1.4,
+            'circle-opacity': 0,
+            'circle-stroke-opacity': 0,
+          },
+        });
+      }
+
+      // 7. User-Selected Region Highlight Frame (Territory / BBox / Circle)
+      if (!map.getLayer('selected-region-fill')) {
+        map.addLayer({
+          id: 'selected-region-fill',
+          type: 'fill',
+          source: 'selected-region-source',
+          paint: {
+            'fill-color': '#38bdf8',
+            'fill-opacity': 0.14,
+          },
+        });
+      }
+      if (!map.getLayer('selected-region-stroke')) {
+        map.addLayer({
+          id: 'selected-region-stroke',
+          type: 'line',
+          source: 'selected-region-source',
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
+          paint: {
+            'line-color': '#38bdf8',
+            'line-width': 2.2,
+            'line-dasharray': [3, 2],
+            'line-opacity': 0.94,
+          },
+        });
+      }
+
+      layersReadyRef.current = true;
+      applyLayerFadePaint();
+      syncThemePaint();
+      syncDataLayers();
+    }
+
+    map.on('style.load', registerOverlaySourcesAndLayers);
+
+    // Upgrade seamlessly to live CARTO Dark Matter HD Vector Tile basemap
+    fetch(CARTO_DARK_MATTER_STYLE_URL)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('CARTO style fetch error'))))
+      .then((rawCartoJson) => {
+        if (cancelled) return;
+        const sanitized = sanitizeCartoDarkMatterStyle(
+          rawCartoJson,
+          latestRef.current.activeLayers.includes('night_lights'),
+          latestRef.current.projectionMode === '3d' ? 'globe' : 'mercator',
+          true,
+        );
+        layersReadyRef.current = false;
+        map.setStyle(sanitized, { diff: false });
+      })
+      .catch(() => {
+        // Offline Natural Earth fallback style already active and crisp
+      });
+
+    const scheduleOverlaySync = () => {
+      if (moveRaf) return;
+      moveRaf = requestAnimationFrame(() => {
+        moveRaf = 0;
+        syncProjectedOverlays();
+      });
+    };
+
+    map.on('move', scheduleOverlaySync);
+    map.on('resize', scheduleOverlaySync);
+
+    map.on('mousemove', (e) => {
+      cancelAnimationFrame(hoverRaf);
+      const lng = e.lngLat.lng;
+      const lat = e.lngLat.lat;
+      hoverRaf = requestAnimationFrame(() => {
+        latestRef.current.onHoverCoordsChange?.([lng, lat]);
+      });
+
+      if (!layersReadyRef.current) return;
+      const layers = latestRef.current.activeLayers;
+      const candidateLayers: string[] = [];
+      if (layers.includes('transport_routes')) candidateLayers.push('routes-core');
+      if (layers.includes('mortality_catastrophe')) candidateLayers.push('mortality-epicenter-ring');
+      if (layers.includes('species_discovery')) candidateLayers.push('species-points-layer');
+      candidateLayers.push('polity-fill');
+
+      const hitLayers = candidateLayers.filter((id) => map.getLayer(id));
+      const features = map.queryRenderedFeatures(e.point, { layers: hitLayers });
+      map.getCanvas().style.cursor = features.length > 0 ? 'pointer' : '';
+    });
+
+    map.on('mouseout', () => {
+      latestRef.current.onHoverCoordsChange?.(null);
+    });
+
+    map.on('click', (e) => {
+      if (!layersReadyRef.current || latestRef.current.drawToolMode !== 'none') return;
+      const {
+        currentYear: yr,
+        activeLayers: layers,
+        activePolity: pol,
+        activeTerritories: terrs,
+      } = latestRef.current;
+
+      // Priority 1: Transport route click (when active)
+      if (layers.includes('transport_routes') && map.getLayer('routes-core')) {
+        const routeHits = map.queryRenderedFeatures(
+          [
+            [e.point.x - 6, e.point.y - 6],
+            [e.point.x + 6, e.point.y + 6],
+          ],
+          { layers: ['routes-core'] },
+        );
+        if (routeHits.length > 0) {
+          const rid = routeHits[0].properties?.id;
+          const match = getActiveTransportRoutes(yr).find((r) => r.route.id === rid);
+          if (match) {
+            latestRef.current.onSelectEntity({
+              kind: 'route',
+              route: match.route,
+              annualTrips: match.annualTrips,
+              colorHex: match.colorHex,
+            });
+            return;
+          }
+        }
+      }
+
+      // Priority 2: Mortality catastrophe click (when active)
+      if (layers.includes('mortality_catastrophe') && map.getLayer('mortality-epicenter-ring')) {
+        const catHits = map.queryRenderedFeatures(
+          [
+            [e.point.x - 10, e.point.y - 10],
+            [e.point.x + 10, e.point.y + 10],
+          ],
+          { layers: ['mortality-epicenter-ring'] },
+        );
+        if (catHits.length > 0) {
+          const cid = catHits[0].properties?.id;
+          const match = getActiveMortalityCatastrophes(
+            yr,
+            false,
+            latestRef.current.selectedRange,
+          ).find((c) => c.id === cid);
+          if (match) {
+            latestRef.current.onSelectEntity({ kind: 'catastrophe', catastrophe: match });
+            return;
+          }
+        }
+      }
+
+      // Priority 3: Species beacon click (when active)
+      if (layers.includes('species_discovery') && map.getLayer('species-points-layer')) {
+        const spHits = map.queryRenderedFeatures(
+          [
+            [e.point.x - 8, e.point.y - 8],
+            [e.point.x + 8, e.point.y + 8],
+          ],
+          { layers: ['species-points-layer'] },
+        );
+        if (spHits.length > 0) {
+          const sid = spHits[0].properties?.id;
+          const match = getActiveSpeciesDiscoveries(
+            yr,
+            latestRef.current.selectedRange,
+          ).find((s) => s.id === sid);
+          if (match) {
+            latestRef.current.onSelectEntity({ kind: 'species', species: match });
+            return;
+          }
+        }
+      }
+
+      // Priority 4: Geopolitical territory polygon click -> open selected element overview popover (never auto-box-select)
+      if (pol && terrs.length > 0 && map.getLayer('polity-fill')) {
+        const polHits = map.queryRenderedFeatures(e.point, { layers: ['polity-fill'] });
+        if (polHits.length > 0) {
+          const clickedId = polHits[0].properties?.id;
+          const hitTerr = terrs.find((t) => t.id === clickedId) || terrs[0];
+          latestRef.current.onSelectEntity({
+            kind: 'polity',
+            phase: pol,
+            regionCount: terrs.length,
+            clickedTerritoryId: hitTerr?.id,
+            clickedTerritoryNameZh: hitTerr?.nameZh,
+            clickedTerritoryTier: hitTerr?.tier,
+          });
+          return;
+        }
+      }
+    });
+
+    // Wheel-down zoom-out transition to 3D Solar System when Lunar & Deep Space layer is active
+    const canvasEl = map.getCanvas();
+    const handleWheel = (e: WheelEvent) => {
+      if (
+        latestRef.current.activeLayers.includes('space_race') &&
+        latestRef.current.projectionMode === '3d' &&
+        e.deltaY > 0 &&
+        map.getZoom() <= 2.35
+      ) {
+        latestRef.current.onSpaceStageChange('solar_system', 'moon');
+      }
+    };
+    canvasEl.addEventListener('wheel', handleWheel, { passive: true });
+
+    syncApiRef.current = {
+      syncDataLayers,
+      syncProjectedOverlays,
+      syncThemePaint,
+    };
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(routeAnimRaf);
+      cancelAnimationFrame(layerFadeRaf);
+      window.clearTimeout(mortalityAnimTimer);
+      cancelAnimationFrame(hoverRaf);
+      cancelAnimationFrame(moveRaf);
+      canvasEl.removeEventListener('wheel', handleWheel);
+      mapRef.current = null;
+      map.remove();
+    };
+  }, []);
+
+  // Sync data layers whenever year, selectedRange, selectedRegion, or multi-select activeLayers changes
+  useEffect(() => {
+    syncApiRef.current?.syncThemePaint();
+    syncApiRef.current?.syncDataLayers();
+  }, [
+    currentYear,
+    selectedRange,
+    activeLayers,
+    activePolity,
+    activeTerritories,
+    activeSpecies,
+    selectedRegion,
+  ]);
+
+  // Escape key cancels active box/circle draw mode
+  useEffect(() => {
+    if (drawToolMode === 'none') {
+      setDragPreview(null);
+      return;
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDragPreview(null);
+        onFinishDrawTool();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [drawToolMode, onFinishDrawTool]);
+
+  // Morph between 3D Globe (`globe`) and 2D Flat World Map (`mercator`) seamlessly
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !layersReadyRef.current) return;
+    map.setProjection({ type: projectionMode === '3d' ? 'globe' : 'mercator' });
+    map.easeTo({
+      pitch: projectionMode === '3d' ? 16 : 0,
+      bearing: 0,
+      zoom: projectionMode === '2d' ? Math.min(map.getZoom(), 2.8) : Math.max(map.getZoom(), 3.3),
+      duration: 520,
+    });
+    const timer = window.setTimeout(() => {
+      syncApiRef.current?.syncProjectedOverlays();
+    }, 540);
+    return () => window.clearTimeout(timer);
+  }, [projectionMode]);
+
+  // Execute toolbar camera commands (+ / - / reset north)
+  useEffect(() => {
+    if (!cameraCommand) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (cameraCommand.kind === 'zoom_in') {
+      map.zoomTo(Math.min(map.getMaxZoom(), map.getZoom() + 0.9), { duration: 280 });
+    } else if (cameraCommand.kind === 'zoom_out') {
+      const nextZoom = map.getZoom() - 0.95;
+      if (hasSpaceLayer && projectionMode === '3d' && nextZoom <= 2.1) {
+        onSpaceStageChange('solar_system', 'moon');
+        return;
+      }
+      map.zoomTo(Math.max(map.getMinZoom(), nextZoom), { duration: 280 });
+    } else if (cameraCommand.kind === 'reset_north') {
+      map.easeTo({
+        center: [23.8, 37.6],
+        zoom: projectionMode === '3d' ? 3.55 : 2.3,
+        pitch: projectionMode === '3d' ? 16 : 0,
+        bearing: 0,
+        duration: 520,
+      });
+    }
+  }, [cameraCommand, hasSpaceLayer, onSpaceStageChange, projectionMode]);
+
+  const visibleSpeciesBubbles = hasSpeciesLayer
+    ? speciesBubbles.filter((b) => b.visible)
+    : [];
+  const localizedActivePolity = activePolity ? localizePolity(activePolity, language) : null;
+
+  return (
+    <div
+      className="relative w-full h-full overflow-hidden bg-[#06080D]"
+      data-testid={projectionMode === '3d' ? 'maplibre-globe-stage' : 'maplibre-2d-stage'}
+    >
+      {/* Subtle Deep-Space Radial Backdrop framing the 3D MapLibre Globe */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(circle at 50% 48%, rgba(29, 59, 99, 0.16) 0%, rgba(6, 8, 13, 0.96) 72%)',
+        }}
+      />
+
+      {/* MapLibre GL JS v5+ Canvas Mount */}
+      <div ref={containerRef} className="w-full h-full" />
+
+      {/* Interactive Box / Circle Geographic Region Selection Overlay */}
+      {drawToolMode !== 'none' && (
+        <div
+          data-testid="region-draw-overlay"
+          onPointerDown={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            setDragPreview({ startX: x, startY: y, curX: x, curY: y });
+          }}
+          onPointerMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            if (mapRef.current) {
+              const ll = mapRef.current.unproject([x, y]);
+              onHoverCoordsChange?.([ll.lng, ll.lat]);
+            }
+            setDragPreview((prev) => (prev ? { ...prev, curX: x, curY: y } : null));
+          }}
+          onPointerUp={(e) => {
+            if (!dragPreview || !mapRef.current) {
+              setDragPreview(null);
+              return;
+            }
+            const rect = e.currentTarget.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+            const distPx = Math.hypot(endX - dragPreview.startX, endY - dragPreview.startY);
+            const startX = dragPreview.startX;
+            const startY = dragPreview.startY;
+            setDragPreview(null);
+
+            if (distPx < 6) {
+              return;
+            }
+
+            const map = mapRef.current;
+            if (drawToolMode === 'box') {
+              const xMin = Math.min(startX, endX);
+              const xMax = Math.max(startX, endX);
+              const yMin = Math.min(startY, endY);
+              const yMax = Math.max(startY, endY);
+              const corners = [
+                map.unproject([xMin, yMin]),
+                map.unproject([xMax, yMin]),
+                map.unproject([xMax, yMax]),
+                map.unproject([xMin, yMax]),
+              ];
+              const lons = corners.map((c) => clamp(c.lng, -180, 180));
+              const lats = corners.map((c) => clamp(c.lat, -85, 85));
+              onSelectRegion({
+                kind: 'bbox',
+                nameZh: ui.customBoxName,
+                bbox: {
+                  minLon: +Math.min(...lons).toFixed(4),
+                  minLat: +Math.min(...lats).toFixed(4),
+                  maxLon: +Math.max(...lons).toFixed(4),
+                  maxLat: +Math.max(...lats).toFixed(4),
+                },
+              });
+              onFinishDrawTool();
+            } else if (drawToolMode === 'circle') {
+              const cLL = map.unproject([startX, startY]);
+              const eLL = map.unproject([endX, endY]);
+              const center: [number, number] = [
+                +clamp(cLL.lng, -180, 180).toFixed(4),
+                +clamp(cLL.lat, -85, 85).toFixed(4),
+              ];
+              const edge: [number, number] = [
+                clamp(eLL.lng, -180, 180),
+                clamp(eLL.lat, -85, 85),
+              ];
+              const radiusKm = clamp(Math.round(haversineDistanceKm(center, edge)), 8, 2500);
+              onSelectRegion({
+                kind: 'circle',
+                nameZh: ui.customCircleName,
+                center,
+                radiusKm,
+                bbox: computeCircleBBox(center, radiusKm),
+              });
+              onFinishDrawTool();
+            }
+          }}
+          className="absolute inset-0 z-15 cursor-crosshair select-none touch-none"
+        >
+          {/* Active Draw Tool Instruction Banner */}
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            className="pointer-events-auto absolute top-16 left-4 z-20 flex items-center gap-3 px-3.5 py-2 rounded-xl bg-[#090C12]/96 border border-sky-400/45 text-xs text-slate-200 shadow-[0_12px_30px_rgba(0,0,0,0.75)]"
+          >
+            <span>{drawToolMode === 'box' ? ui.boxModeBanner : ui.circleModeBanner}</span>
+            <button
+              type="button"
+              onClick={onFinishDrawTool}
+              className="px-2 py-0.5 rounded-md bg-white/[0.08] hover:bg-white/[0.14] text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              {ui.cancelBtn}
+            </button>
+          </div>
+
+          {/* Live Screen-Space Drag Preview */}
+          {dragPreview && (
+            <svg className="pointer-events-none absolute inset-0 w-full h-full" aria-hidden="true">
+              {drawToolMode === 'box' ? (
+                <rect
+                  x={Math.min(dragPreview.startX, dragPreview.curX)}
+                  y={Math.min(dragPreview.startY, dragPreview.curY)}
+                  width={Math.abs(dragPreview.curX - dragPreview.startX)}
+                  height={Math.abs(dragPreview.curY - dragPreview.startY)}
+                  fill="rgba(56, 189, 248, 0.15)"
+                  stroke="#38bdf8"
+                  strokeWidth="1.8"
+                  strokeDasharray="5 3"
+                />
+              ) : (
+                <>
+                  <circle
+                    cx={dragPreview.startX}
+                    cy={dragPreview.startY}
+                    r={Math.hypot(
+                      dragPreview.curX - dragPreview.startX,
+                      dragPreview.curY - dragPreview.startY,
+                    )}
+                    fill="rgba(56, 189, 248, 0.15)"
+                    stroke="#38bdf8"
+                    strokeWidth="1.8"
+                    strokeDasharray="5 3"
+                  />
+                  <circle
+                    cx={dragPreview.startX}
+                    cy={dragPreview.startY}
+                    r="3.2"
+                    fill="#38bdf8"
+                  />
+                </>
+              )}
+            </svg>
+          )}
+        </div>
+      )}
+
+      {/* Always-Present Geopolitical & Historical Flag Leader Callout (offset west of Attica so Aegean islands stay 100% unobstructed) */}
+      <AnimatePresence>
+        {activePolity && localizedActivePolity && flagOverlay && flagOverlay.visible && (
+          <motion.div
+            key={`polity-callout-${activePolity.id}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="pointer-events-none absolute inset-0 z-10"
+          >
+            <svg className="pointer-events-none absolute inset-0 w-full h-full" aria-hidden="true">
+              <line
+                x1={Math.round(flagOverlay.x)}
+                y1={Math.round(flagOverlay.y)}
+                x2={Math.round(flagOverlay.x - 62)}
+                y2={Math.round(flagOverlay.y - 38)}
+                stroke={activePolity.borderColor}
+                strokeOpacity="0.78"
+                strokeWidth="1.25"
+              />
+              <circle
+                cx={Math.round(flagOverlay.x)}
+                cy={Math.round(flagOverlay.y)}
+                r="3.2"
+                fill={activePolity.representativeColor}
+                stroke={activePolity.borderColor}
+                strokeWidth="1.4"
+              />
+            </svg>
+            <div
+              style={{
+                transform: `translate3d(${Math.round(flagOverlay.x - 62)}px, ${Math.round(
+                  flagOverlay.y - 38,
+                )}px, 0) translate(-100%, -50%)`,
+              }}
+              className="pointer-events-auto absolute top-0 left-0"
+            >
+              <button
+                type="button"
+                data-testid="polity-flag-callout"
+                onClick={() =>
+                  onSelectEntity({
+                    kind: 'polity',
+                    phase: activePolity,
+                    regionCount: activeTerritories.length,
+                  })
+                }
+                className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-[#0A0D14]/95 border border-white/[0.14] text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.72)] hover:border-sky-400/70 transition-colors cursor-pointer"
+                aria-label={ui.inspectPolityAria(localizedActivePolity.name)}
+              >
+                <HistoricalFlagSvg
+                  flagId={activePolity.flagId}
+                  language={language}
+                  className="w-9 h-6 shrink-0 rounded-[3px] ring-1 ring-white/15"
+                />
+                <div className="text-left leading-tight">
+                  <div className="text-xs font-semibold tracking-wide text-slate-50 whitespace-nowrap">
+                    {localizedActivePolity.name}
+                  </div>
+                  <div className="text-[10px] text-slate-400 whitespace-nowrap mt-0.5">
+                    {localizedActivePolity.capitalName}
+                  </div>
+                </div>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Flora & Fauna Species Discovery Leader Lines & Smooth Fade-In/Out Callouts */}
+      <svg
+        className="pointer-events-none absolute inset-0 z-10 w-full h-full"
+        aria-hidden="true"
+      >
+        <AnimatePresence>
+          {visibleSpeciesBubbles.map(({ species, anchorX, anchorY, x, y }) => (
+            <motion.g
+              key={`sp-line-${species.id}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <line
+                x1={anchorX}
+                y1={anchorY}
+                x2={x}
+                y2={y - 8}
+                stroke="rgba(52, 211, 153, 0.62)"
+                strokeWidth="1.2"
+                strokeDasharray="3 2"
+              />
+            </motion.g>
+          ))}
+        </AnimatePresence>
+      </svg>
+
+      <AnimatePresence>
+        {visibleSpeciesBubbles.map(({ species, x, y }) => {
+          const spLoc = localizeSpecies(species, language);
+          return (
+            <motion.div
+              key={`sp-card-${species.id}`}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+              style={{
+                left: `${Math.round(x)}px`,
+                top: `${Math.round(y)}px`,
+                transform: 'translate(-50%, -100%)',
+              }}
+              className="absolute z-10"
+            >
+              <button
+                type="button"
+                onClick={() => onSelectEntity({ kind: 'species', species })}
+                className="w-[232px] px-3 py-2 rounded-lg bg-[#0A0D14]/95 border border-emerald-500/40 text-left shadow-[0_10px_28px_rgba(0,0,0,0.68)] hover:border-emerald-400/80 transition-colors cursor-pointer"
+                aria-label={ui.speciesAria(spLoc.commonName)}
+              >
+                <div className="text-xs font-semibold text-emerald-200 truncate">
+                  {spLoc.commonName}
+                </div>
+                <div className="text-[11px] text-slate-300 truncate mt-0.5">
+                  {ui.speciesDiscoveryPrefix}
+                  {spLoc.discoverer}
+                </div>
+                <div className="text-[10px] text-slate-400 font-mono tabular-nums truncate mt-0.5">
+                  {formatYearByLang(species.discoveryYear, language, true)} ·{' '}
+                  {species.scientificName}
+                </div>
+              </button>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+
+      {/* Subtle Orbital Transition Affordance when Lunar & Deep Space layer is active on Earth */}
+      <AnimatePresence>
+        {hasSpaceLayer && projectionMode === '3d' && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="pointer-events-auto absolute top-16 left-4 z-10 flex items-center gap-3 px-3.5 py-2 rounded-xl bg-[#0A0D14]/95 border border-white/[0.08] text-xs text-slate-300 shadow-[0_10px_28px_rgba(0,0,0,0.65)]"
+          >
+            <span>{ui.scrollToSolarHint}</span>
+            <button
+              type="button"
+              onClick={() => onSpaceStageChange('solar_system', 'moon')}
+              className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/35 text-sky-300 font-medium transition-colors whitespace-nowrap cursor-pointer"
+            >
+              {ui.enterSolarBtn}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};

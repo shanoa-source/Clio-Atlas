@@ -1,0 +1,27 @@
+# Cloudflare Pages + Pages Functions Configuration
+# Build command (Cloudflare Pages Dashboard / CI): npm run build   (or: bun run build)
+# Build output directory: dist
+# Functions directory: functions/ (auto-detected by Cloudflare Pages)
+
+name = "civilization-evolution-atlas"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-02-14"
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets (configure in Cloudflare Pages -> Settings -> Environment Variables / Secrets,
+# or via CLI: `npx wrangler pages secret put GEMINI_API_KEY`):
+#   - GEMINI_API_KEY (Required for POST /api/chat)
+#   - CUSTOM_SYSTEM_PROMPT (Optional system prompt override)
+
+# Optional Cloudflare Workers KV bindings for persistent runtime data imports & global OSM geometry cache:
+# 1. `npx wrangler kv namespace create ATLAS_DATA_KV`
+# 2. `npx wrangler kv namespace create OSM_CACHE_KV`
+# 3. Uncomment below and fill in your namespace IDs:
+#
+# [[kv_namespaces]]
+# binding = "ATLAS_DATA_KV"
+# id = "REPLACE_WITH_ATLAS_DATA_KV_NAMESPACE_ID"
+#
+# [[kv_namespaces]]
+# binding = "OSM_CACHE_KV"
+# id = "REPLACE_WITH_OSM_CACHE_KV_NAMESPACE_ID"

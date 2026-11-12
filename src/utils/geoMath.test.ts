@@ -1,0 +1,758 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { geoArea } from 'd3-geo';
+import {
+  computeCelestialBodyXZ,
+  computeMissionTransferProgress,
+  computeMortalityEventEnvelope,
+  computeTimelineTickStep,
+  deathsToMortalityMagnitude,
+  densifyAndSliceWaypoints,
+  densityToBlueBrownRGB,
+  densityToPopulationMagnitude,
+  formatHistoricalYear,
+  geoToFlatXYZ,
+  geoToMorphedXYZ,
+  geoToSphereXYZ,
+  getActiveMortalityCatastrophes,
+  getActivePolityPhase,
+  getActiveSpeciesDiscoveries,
+  getActiveTerritoryRegions,
+  getActiveTransportRoutes,
+  GLOBE_RADIUS,
+  mortalityDensityToRedRGB,
+  routeUsageToWhiteRedRGB,
+  stepHistoricalYearWithLoop,
+} from './geoMath';
+import {
+  ATHENS_MORTALITY_CATASTROPHES,
+  ATHENS_TERRITORY_REGIONS,
+  SOLAR_SYSTEM_BODIES,
+  SPACE_MISSIONS,
+} from '../data/athensClassicalData';
+import { isPointOnMediterraneanLand } from '../three/earthGeoData';
+import {
+  extractDissolvedOuterBoundary,
+  getAllConfiguredOsmIds,
+  parseNominatimGeoJsonFeatures,
+  resolveActiveOsmTerritories,
+  seedOsmGeometryCache,
+} from '../services/osmBoundaryService';
+import {
+  buildOfflineDarkMatterStyle,
+  sanitizeCartoDarkMatterStyle,
+} from '../map/cartoStyleBuilder';
+import { SpaceMission } from '../types/history';
+
+// Pre-seed OpenStreetMap cache from os.tmpdir() if present for deterministic offline unit tests
+const diskCachePath = path.join(
+  os.tmpdir(),
+  'civilization-atlas-osm-cache',
+  'osm-boundaries-v1.json',
+);
+if (fs.existsSync(diskCachePath)) {
+  const cached = JSON.parse(fs.readFileSync(diskCachePath, 'utf8'));
+  seedOsmGeometryCache(cached);
+}
+
+test('zero handwritten polygon coordinates exist in ATHENS_TERRITORY_REGIONS; all regions bind canonical OpenStreetMap IDs', () => {
+  assert.equal(ATHENS_TERRITORY_REGIONS.length, 12);
+  for (const reg of ATHENS_TERRITORY_REGIONS) {
+    assert.equal('polygon' in (reg as any), false, `Region ${reg.id} must not have handwritten polygon`);
+    assert.equal(
+      'clipPolygons' in (reg as any),
+      false,
+      `Region ${reg.id} must not have handwritten clipPolygons`,
+    );
+    assert.ok(Array.isArray(reg.osmIds) && reg.osmIds.length >= 1);
+    for (const osmId of reg.osmIds) {
+      assert.match(osmId, /^[RW]\d+$/, `Invalid canonical OSM ID ${osmId} on ${reg.id}`);
+    }
+  }
+
+  const uniqueOsmIds = getAllConfiguredOsmIds();
+  assert.ok(uniqueOsmIds.length >= 45);
+});
+
+test('no polity borders or flags exist before 500 BCE or after 404 BCE', () => {
+  assert.equal(getActivePolityPhase(-501), null);
+  assert.equal(getActiveTerritoryRegions(-501).length, 0);
+  assert.equal(resolveActiveOsmTerritories(-501).length, 0);
+  assert.equal(getActivePolityPhase(-1200), null);
+  assert.equal(getActivePolityPhase(-403), null);
+  assert.equal(getActiveTerritoryRegions(-403).length, 0);
+  assert.equal(resolveActiveOsmTerritories(-403).length, 0);
+  assert.equal(getActivePolityPhase(2020), null);
+});
+
+test('OpenStreetMap geometries normalize cleanly, dissolve internal sub-municipal seams, and have valid spherical winding', () => {
+  // Verify Nominatim GeoJSON parser & shared-edge dissolution on two adjacent squares
+  const sampleFc = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { osm_type: 'relation', osm_id: 999001 },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [23.6, 37.9],
+              [23.7, 37.9],
+              [23.7, 38.0],
+              [23.6, 38.0],
+              [23.6, 37.9],
+            ],
+          ],
+        },
+      },
+      {
+        type: 'Feature',
+        properties: { osm_type: 'relation', osm_id: 999002 },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [23.7, 37.9],
+              [23.8, 37.9],
+              [23.8, 38.0],
+              [23.7, 38.0],
+              [23.7, 37.9],
+            ],
+          ],
+        },
+      },
+    ],
+  };
+
+  const parsed = parseNominatimGeoJsonFeatures(sampleFc);
+  assert.equal(parsed.size, 2);
+  const merged = {
+    type: 'MultiPolygon' as const,
+    coordinates: [
+      ...parsed.get('R999001')!.coordinates,
+      ...parsed.get('R999002')!.coordinates,
+    ],
+  };
+  const dissolved = extractDissolvedOuterBoundary(merged);
+  // 2 squares = 8 directed segments; shared edge [23.7,37.9]-[23.7,38.0] cancels out (2 segments removed -> 6 exterior segments)
+  const totalExteriorSegments = dissolved.coordinates.reduce(
+    (sum, line) => sum + (line.length - 1),
+    0,
+  );
+  assert.equal(totalExteriorSegments, 6);
+
+  if (fs.existsSync(diskCachePath)) {
+    const active454 = resolveActiveOsmTerritories(-454);
+    assert.ok(active454.length >= 10);
+    for (const feat of active454) {
+      const steradians = geoArea(feat.geometry as any);
+      assert.ok(
+        steradians > 0 && steradians < 0.02,
+        `OSM Polygon ${feat.id} has invalid spherical area: ${steradians}`,
+      );
+      assert.ok(feat.outerBoundary.coordinates.length >= 1);
+    }
+  }
+
+  assert.equal(isPointOnMediterraneanLand(23.7275, 37.9838), true);
+  assert.equal(isPointOnMediterraneanLand(25.0, 36.0), false);
+});
+
+test('Classical Athens polity phases, representative colors, and flags switch accurately across 500–404 BCE', () => {
+  const earlyPolis = getActivePolityPhase(-490);
+  assert.ok(earlyPolis);
+  assert.equal(earlyPolis.flagId, 'archaic_owl');
+  assert.equal(earlyPolis.representativeColor, '#2563EB');
+
+  const delian = getActivePolityPhase(-470);
+  assert.ok(delian);
+  assert.equal(delian.flagId, 'delian_alliance');
+  assert.notEqual(delian.representativeColor, earlyPolis.representativeColor);
+
+  const empirePeak = getActivePolityPhase(-454);
+  assert.ok(empirePeak);
+  assert.equal(empirePeak.flagId, 'imperial_athens');
+
+  const wartime = getActivePolityPhase(-420);
+  assert.ok(wartime);
+  assert.equal(wartime.flagId, 'strategoi_wartime');
+
+  const siege = getActivePolityPhase(-404);
+  assert.ok(siege);
+  assert.equal(siege.flagId, 'ionian_siege');
+});
+
+test('territory borders expand from 500 BCE to 454 BCE peak and contract by 404 BCE', () => {
+  const regions500 = getActiveTerritoryRegions(-500);
+  const regions454 = getActiveTerritoryRegions(-454);
+  const regions404 = getActiveTerritoryRegions(-404);
+
+  assert.ok(regions500.length >= 2);
+  assert.ok(regions454.length > regions500.length);
+  assert.ok(regions404.length < regions454.length);
+});
+
+test('population density maps low density to blue and high density to deep brown', () => {
+  const lowBlue = densityToBlueBrownRGB(12);
+  const highBrown = densityToBlueBrownRGB(160);
+
+  assert.ok(lowBlue[2] > lowBlue[0] + 100);
+  assert.ok(highBrown[0] > highBrown[1] && highBrown[1] > highBrown[2]);
+  assert.ok(highBrown[0] < 90);
+});
+
+test('transport route frequency maps low usage to white, high usage to deep red, and slices start-to-end transitions', () => {
+  const lowWhite = routeUsageToWhiteRedRGB(20);
+  const highRed = routeUsageToWhiteRedRGB(440);
+
+  assert.deepEqual(lowWhite, [255, 255, 255]);
+  assert.ok(highRed[0] > 140 && highRed[1] < 40 && highRed[2] < 40);
+
+  const routes450 = getActiveTransportRoutes(-450);
+  assert.ok(routes450.length >= 5);
+  const slicedQuarter = densifyAndSliceWaypoints(routes450[0].route.waypoints, 0.25);
+  const slicedFull = densifyAndSliceWaypoints(routes450[0].route.waypoints, 1.0);
+  assert.ok(slicedQuarter.length < slicedFull.length);
+  assert.deepEqual(slicedQuarter[0], routes450[0].route.waypoints[0]);
+});
+
+test('mortality catastrophe density darkens red pixels as density increases', () => {
+  const sparseRed = mortalityDensityToRedRGB(0.05);
+  const denseDarkRed = mortalityDensityToRedRGB(1.0);
+
+  assert.ok(sparseRed[0] > denseDarkRed[0]);
+  assert.ok(denseDarkRed[0] > denseDarkRed[1] * 3);
+  const events430 = getActiveMortalityCatastrophes(-430, true);
+  assert.ok(events430.some((e) => e.id === 'cat_plague_of_athens'));
+});
+
+test('ThreeGlobe aligned 3D sphere and 2D flat world map coordinates match exactly', () => {
+  const [sx, sy, sz] = geoToSphereXYZ(0, 0, GLOBE_RADIUS);
+  assert.ok(Math.abs(sx) < 1e-6 && Math.abs(sy) < 1e-6 && Math.abs(sz - GLOBE_RADIUS) < 1e-6);
+
+  const [fx, fy, fz] = geoToFlatXYZ(90, 45, 0.5);
+  assert.equal(fx, 90);
+  assert.equal(fy, 45);
+  assert.equal(fz, 0.5);
+
+  const morphed0 = geoToMorphedXYZ(23.7275, 37.9838, 0, 0);
+  const sphereAthens = geoToSphereXYZ(23.7275, 37.9838, GLOBE_RADIUS);
+  assert.deepEqual(morphed0, sphereAthens);
+});
+
+test('global timeline zoom supports 1-year tick resolution and historical BCE formatting', () => {
+  const fineZoom = computeTimelineTickStep(24);
+  assert.equal(fineZoom.minorStep, 1);
+  const millennialZoom = computeTimelineTickStep(4000);
+  assert.equal(millennialZoom.majorStep, 500);
+  assert.equal(formatHistoricalYear(-454), '公元前 454 年');
+  assert.equal(formatHistoricalYear(-454, true), '454 BCE');
+});
+
+test('species discoveries and Solar System orbital / trajectory mechanics work accurately', () => {
+  assert.equal(getActiveSpeciesDiscoveries(-495).length, 0);
+  // Standard single-year spotlight window shows contemporary discoveries without centuries-long clutter
+  assert.equal(getActiveSpeciesDiscoveries(-420).length, 2);
+  // Range-selection mode retains every species discovered inside the selected interval without disappearing
+  assert.equal(getActiveSpeciesDiscoveries(-420, [-490, -410]).length, 7);
+  assert.equal(SPACE_MISSIONS.length, 0);
+
+  const earth = SOLAR_SYSTEM_BODIES.find((b) => b.id === 'earth')!;
+  const moon = SOLAR_SYSTEM_BODIES.find((b) => b.id === 'moon')!;
+  const [ex, ez] = computeCelestialBodyXZ(earth, -454);
+  const [mx, mz] = computeCelestialBodyXZ(moon, -454);
+  assert.ok(Math.abs(Math.hypot(ex, ez) - earth.orbitRadiusUnits) < 1e-4);
+  assert.ok(Math.abs(Math.hypot(mx - ex, mz - ez) - moon.orbitRadiusUnits) < 1e-4);
+
+  const sampleMission: SpaceMission = {
+    id: 'test_transfer',
+    nameZh: '测试转移轨道',
+    agency: 'TEST',
+    originBodyId: 'earth',
+    targetBodyId: 'mars',
+    launchYear: 1975,
+    arrivalYear: 1976,
+    missionStatusZh: '在途',
+    orbitProbes: [],
+    surfaceBases: [],
+  };
+  assert.equal(computeMissionTransferProgress(sampleMission, 1974.5), 0);
+  assert.equal(computeMissionTransferProgress(sampleMission, 1975.5), 0.5);
+  assert.equal(computeMissionTransferProgress(sampleMission, 1976.2), 1);
+});
+
+test('CARTO Dark Matter style sanitizer configures 3D Globe projection and strips all modern boundaries, roads, buildings, and nation/city labels', () => {
+  const sampleCartoRaw = {
+    version: 8,
+    sources: {
+      carto: {
+        type: 'vector',
+        tiles: ['https://tiles.basemaps.cartocdn.com/vectortiles/carto.streets/v2/{z}/{x}/{y}.mvt'],
+      },
+    },
+    sprite: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/sprite',
+    glyphs: 'https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf',
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': '#0e0e0e' } },
+      { id: 'water', type: 'fill', source: 'carto', 'source-layer': 'water', paint: {} },
+      { id: 'waterway', type: 'line', source: 'carto', 'source-layer': 'waterway', paint: {} },
+      { id: 'boundary_country_outline', type: 'line', source: 'carto', 'source-layer': 'boundaries' },
+      { id: 'boundary_state', type: 'line', source: 'carto', 'source-layer': 'boundaries' },
+      { id: 'road_pri_fill_noramp', type: 'line', source: 'carto', 'source-layer': 'roads' },
+      { id: 'building', type: 'fill', source: 'carto', 'source-layer': 'buildings' },
+      { id: 'place_country_1', type: 'symbol', source: 'carto', 'source-layer': 'place' },
+      { id: 'place_city_r6', type: 'symbol', source: 'carto', 'source-layer': 'place' },
+      { id: 'watername_sea', type: 'symbol', source: 'carto', 'source-layer': 'water_name' },
+    ],
+  };
+
+  const sanitizedGlobe = sanitizeCartoDarkMatterStyle(sampleCartoRaw, false, 'globe');
+  assert.deepEqual(sanitizedGlobe.projection, { type: 'globe' });
+  assert.ok(sanitizedGlobe.sky);
+
+  const ids = new Set(sanitizedGlobe.layers.map((l) => l.id));
+  assert.equal(ids.has('boundary_country_outline'), false);
+  assert.equal(ids.has('boundary_state'), false);
+  assert.equal(ids.has('road_pri_fill_noramp'), false);
+  assert.equal(ids.has('building'), false);
+  assert.equal(ids.has('place_country_1'), false);
+  assert.equal(ids.has('place_city_r6'), false);
+
+  assert.equal(ids.has('background'), true);
+  assert.equal(ids.has('water'), true);
+  assert.equal(ids.has('carto-water-coastline-crisp'), true);
+  assert.equal(ids.has('waterway'), true);
+  assert.equal(ids.has('watername_sea'), true);
+
+  const waterLayer = sanitizedGlobe.layers.find((l) => l.id === 'water') as any;
+  assert.equal(waterLayer?.paint?.['fill-color'], '#090d16');
+  assert.equal(waterLayer?.paint?.['fill-opacity'], 0.9995);
+
+  const offlineMercator = buildOfflineDarkMatterStyle(true, 'mercator');
+  assert.deepEqual(offlineMercator.projection, { type: 'mercator' });
+  assert.equal(typeof offlineMercator.glyphs, 'string');
+  assert.ok((offlineMercator.glyphs as string).length > 10);
+  assert.equal(offlineMercator.sprite, undefined);
+  assert.ok(offlineMercator.layers.some((l) => l.id === 'ne-land-fill-underlay'));
+});
+
+test('all 7 Catmull-Rom maritime transport splines stay 100% in sea lanes and round Cape Sounion without crossing land', async () => {
+  const { ATHENS_TRANSPORT_ROUTES } = await import('../data/athensClassicalData');
+  const { smoothMaritimeWaypointsCatmullRom } = await import('./geoMath');
+  const { getLand50mGeoJson } = await import('../three/earthGeoData');
+
+  const landFc = getLand50mGeoJson();
+  interface BboxRing {
+    id: string;
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    ring: [number, number][];
+  }
+  const indexedRings: BboxRing[] = [];
+  const registerPolys = (id: string, polys: any[]) => {
+    for (const poly of polys) {
+      const r = poly[0];
+      if (!r || r.length < 4) continue;
+      let minX = 999;
+      let minY = 999;
+      let maxX = -999;
+      let maxY = -999;
+      for (const [x, y] of r) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      indexedRings.push({ id, minX, minY, maxX, maxY, ring: r });
+    }
+  };
+
+  for (const f of landFc.features) {
+    if (f.geometry.type === 'Polygon') registerPolys('land50m', [f.geometry.coordinates]);
+    else if (f.geometry.type === 'MultiPolygon') registerPolys('land50m', f.geometry.coordinates);
+  }
+
+  if (fs.existsSync(diskCachePath)) {
+    const cachedOsm = JSON.parse(fs.readFileSync(diskCachePath, 'utf8'));
+    const islandOsmIds = [
+      'R957707', 'R3301815', 'R537221', 'R1815263', 'R965446',
+      'R531131', 'R531101', 'R531102', 'R531115', 'R453091', 'R453214',
+      'R531999', 'R531990', 'R531997', 'R532001', 'R531978', 'R542011', 'R453964',
+      'R6830778', 'R3188280', 'R452381', 'R537593', 'R537592',
+      'R536480', 'R452614', 'R543490', 'R531969',
+    ];
+    for (const id of islandOsmIds) {
+      if (cachedOsm[id]) registerPolys(id, cachedOsm[id].coordinates);
+    }
+  }
+
+  const hitLand = (lon: number, lat: number): string | null => {
+    for (const b of indexedRings) {
+      if (lon < b.minX || lon > b.maxX || lat < b.minY || lat > b.maxY) continue;
+      if (b.id === 'land50m' && lon >= 23.62 && lon <= 24.18 && lat >= 38.05 && lat <= 38.45) {
+        continue;
+      }
+      let inside = false;
+      const r = b.ring;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [xi, yi] = r[i];
+        const [xj, yj] = r[j];
+        if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi + 1e-12) + xi) {
+          inside = !inside;
+        }
+      }
+      if (inside) return b.id;
+    }
+    return null;
+  };
+
+  for (const route of ATHENS_TRANSPORT_ROUTES) {
+    const spline = smoothMaritimeWaypointsCatmullRom(route.waypoints, 24);
+    assert.ok(spline.length > 100, `Route ${route.id} should produce a dense smooth spline`);
+    for (const [lon, lat] of spline) {
+      const hit = hitLand(lon, lat);
+      assert.equal(
+        hit,
+        null,
+        `Maritime route ${route.id} crossed land (${hit}) at [${lon.toFixed(4)}, ${lat.toFixed(4)}]`,
+      );
+    }
+    // Every Aegean / Eastern Mediterranean route arriving at Piraeus must round south of Cape Sounion (37.65°N)
+    if (route.id !== 'route_magna_graecia_sicily_west') {
+      const sounionPass = spline.some(
+        ([lon, lat]) => lon >= 23.96 && lon <= 24.06 && lat <= 37.60,
+      );
+      assert.equal(
+        sounionPass,
+        true,
+        `Route ${route.id} must round south of Cape Sounion before entering Saronic Gulf`,
+      );
+    }
+  }
+});
+
+test('continuous GPU thermal heatmap control points emit concentric core (1.0), mid (0.6), and outer (0.25) weight tiers', async () => {
+  const { computeMortalityThermalPoints, computePopulationThermalPoints } = await import(
+    './pixelLayers'
+  );
+
+  assert.equal(computeMortalityThermalPoints(-510).length, 0);
+  assert.equal(computePopulationThermalPoints(-510).length, 0);
+  assert.equal(computeMortalityThermalPoints(-390).length, 0);
+  assert.equal(computePopulationThermalPoints(-390).length, 0);
+
+  const mort413 = computeMortalityThermalPoints(-413);
+  const mortFullRange = computeMortalityThermalPoints(-413, [-495, -404]);
+  const pop454 = computePopulationThermalPoints(-454);
+  assert.ok(mort413.length >= 90 && mort413.length < mortFullRange.length);
+  assert.ok(mortFullRange.length >= 400);
+  assert.ok(pop454.length >= 400);
+
+  for (const list of [mort413, pop454]) {
+    const corePts = list.filter((p) => p.tier === 'core');
+    const midPts = list.filter((p) => p.tier === 'mid');
+    const outerPts = list.filter((p) => p.tier === 'outer');
+    assert.ok(corePts.length > 0 && midPts.length > 0 && outerPts.length > 0);
+    assert.ok(corePts.every((p) => p.tierBaseWeight === 1.0));
+    assert.ok(midPts.every((p) => p.tierBaseWeight === 0.6));
+    assert.ok(outerPts.every((p) => p.tierBaseWeight === 0.25));
+  }
+});
+
+test('mortality catastrophe fade-in / post-event fade-out, Marathon (6,600) vs Persian Invasion (78,000) magnitude scaling, night-light distribution, and range loop playback', async () => {
+  const { computeMortalityThermalPoints, computeNightLightThermalPoints } = await import(
+    './pixelLayers'
+  );
+
+  const marathon = ATHENS_MORTALITY_CATASTROPHES.find((e) => e.id === 'cat_marathon_battle')!;
+  const persianInvasion = ATHENS_MORTALITY_CATASTROPHES.find(
+    (e) => e.id === 'cat_salamis_plataea_persian_invasion',
+  )!;
+
+  // 1. Quantitative magnitude scaling: Marathon (6,600) -> light red (< 0.26); Persian Invasion (78,000) -> deep red (> 0.92)
+  const marathonMag = deathsToMortalityMagnitude(marathon.estimatedDeaths);
+  const persianMag = deathsToMortalityMagnitude(persianInvasion.estimatedDeaths);
+  assert.ok(marathonMag < 0.26, `Expected Marathon (6,600) magnitude < 0.26, got ${marathonMag}`);
+  assert.ok(persianMag > 0.92, `Expected Persian Invasion (78,000) magnitude > 0.92, got ${persianMag}`);
+  assert.ok(persianMag > marathonMag * 3.8);
+
+  // Population density quantitative magnitude scaling: 15/km² -> ~0.18, 160/km² -> 1.0
+  assert.ok(densityToPopulationMagnitude(15) < 0.22);
+  assert.equal(densityToPopulationMagnitude(160), 1.0);
+
+  // 2. Smooth C² quintic fade-in (3-year span) and post-event fade-out (8-year span) in standard mode
+  assert.equal(computeMortalityEventEnvelope(marathon, -493, null), 0);
+  const fadeInEarly = computeMortalityEventEnvelope(marathon, -492, null);
+  const fadeInMid = computeMortalityEventEnvelope(marathon, -491.5, null);
+  const fadeInLate = computeMortalityEventEnvelope(marathon, -491, null);
+  assert.ok(fadeInEarly > 0.18 && fadeInEarly < 0.3);
+  assert.ok(Math.abs(fadeInMid - 0.5) < 1e-6);
+  assert.ok(fadeInLate > 0.7 && fadeInLate < 0.82);
+  assert.equal(computeMortalityEventEnvelope(marathon, -490, null), 1.0);
+  const fadeOutMid = computeMortalityEventEnvelope(marathon, -486, null);
+  assert.ok(Math.abs(fadeOutMid - 0.5) < 1e-6);
+  assert.ok(computeMortalityEventEnvelope(marathon, -483, null) > 0.01);
+  assert.equal(computeMortalityEventEnvelope(marathon, -482, null), 0);
+
+  // 3. Non-disappearing persistence when timeline range selection covers [-495, -475]
+  assert.equal(computeMortalityEventEnvelope(marathon, -476, [-495, -475]), 1.0);
+  assert.equal(computeMortalityEventEnvelope(persianInvasion, -476, [-495, -475]), 1.0);
+  const rangePts = computeMortalityThermalPoints(-476, [-495, -475]);
+  const marathonCoreMax = Math.max(
+    ...rangePts
+      .filter((p) => p.sourceId === 'cat_marathon_battle' && p.tier === 'core')
+      .map((p) => p.weight),
+  );
+  const persianCoreMax = Math.max(
+    ...rangePts
+      .filter((p) => p.sourceId === 'cat_salamis_plataea_persian_invasion' && p.tier === 'core')
+      .map((p) => p.weight),
+  );
+  assert.ok(marathonCoreMax < 0.26, `Marathon core weight should stay light red: ${marathonCoreMax}`);
+  assert.ok(persianCoreMax > 0.70, `Persian Invasion core weight should hit deep red: ${persianCoreMax}`);
+  assert.ok(persianCoreMax > marathonCoreMax * 3.2);
+
+  // 4. Night-light thermal points follow population & industrial distribution
+  const night454 = computeNightLightThermalPoints(-454);
+  assert.ok(night454.length >= 400);
+  const evalGaussianField = (pts: typeof night454, lon: number, lat: number) =>
+    pts.reduce((sum, p) => {
+      const dx = (p.lon - lon) * 0.8;
+      const dy = p.lat - lat;
+      return sum + p.weight * Math.exp(-(dx * dx + dy * dy) / (2 * 0.092 * 0.092));
+    }, 0);
+  const athensNightField = evalGaussianField(night454, 23.7275, 37.975);
+  const thraceNightField = evalGaussianField(night454, 23.355, 40.295);
+  assert.ok(
+    athensNightField > thraceNightField * 3.5,
+    `Expected Athens urban night field (${athensNightField}) > 3.5x sparse Thrace (${thraceNightField})`,
+  );
+
+  // 5. Loop playback within selected time interval & year-0 skip
+  assert.deepEqual(stepHistoricalYearWithLoop(-476, 1, [-477, -475]), {
+    nextYear: -475,
+    reachedGlobalEnd: false,
+  });
+  assert.deepEqual(stepHistoricalYearWithLoop(-475, 1, [-477, -475]), {
+    nextYear: -477,
+    reachedGlobalEnd: false,
+  });
+  assert.deepEqual(stepHistoricalYearWithLoop(-1, 1, null), {
+    nextYear: 1,
+    reachedGlobalEnd: false,
+  });
+});
+
+test('empty data/prompts, data/booklists, and data/events placeholder files exist with zero prefilled content and load without error', async () => {
+  const { loadExternalDataConfig } = await import('../server/dataConfigLoader');
+  const rootDir = process.cwd();
+
+  const promptFile = path.join(rootDir, 'data', 'prompts', 'system_prompt.txt');
+  const booksFile = path.join(rootDir, 'data', 'booklists', 'books.json');
+  const eventsFile = path.join(rootDir, 'data', 'events', 'custom_events.json');
+
+  assert.equal(fs.existsSync(promptFile), true, 'data/prompts/system_prompt.txt must exist');
+  assert.equal(fs.existsSync(booksFile), true, 'data/booklists/books.json must exist');
+  assert.equal(fs.existsSync(eventsFile), true, 'data/events/custom_events.json must exist');
+
+  assert.equal(fs.readFileSync(promptFile, 'utf8').trim(), '', 'system_prompt.txt must be empty');
+  assert.deepEqual(JSON.parse(fs.readFileSync(booksFile, 'utf8')), [], 'books.json must be empty []');
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(eventsFile, 'utf8')),
+    [],
+    'custom_events.json must be empty []',
+  );
+
+  const loaded = loadExternalDataConfig(rootDir);
+  assert.equal(loaded.customSystemPrompt, '');
+  assert.deepEqual(loaded.books, []);
+  assert.deepEqual(loaded.customEvents, []);
+});
+
+test('region selector extracts spatial-temporal overview and builds region-scoped vs global AI prompt context accurately', async () => {
+  const { computeCircleBBox, extractRegionOverview, formatContextForPrompt } = await import(
+    './regionSelector'
+  );
+
+  // 1. Unselected Global Mode at 454 BCE
+  const globalOverview = extractRegionOverview({
+    currentYear: -454,
+    selectedRange: null,
+    activeLayers: ['transport_routes'],
+    selectedRegion: null,
+  });
+  assert.equal(globalOverview.hasSelection, false);
+  assert.equal(globalOverview.selectionKind, 'none');
+  assert.ok(globalOverview.metrics.matchedTerritoryNames.length >= 10);
+  const globalPrompt = formatContextForPrompt(globalOverview, []);
+  assert.match(globalPrompt, /当前全局时间轴状态上下文/);
+
+  // 2. Circle selection centered on Athens (35 km) across 431–426 BCE -> matches Plague of Athens, excludes Sicilian Expedition
+  const athensCenter: [number, number] = [23.7275, 37.9838];
+  const circleOverview = extractRegionOverview({
+    currentYear: -429,
+    selectedRange: [-431, -426],
+    activeLayers: ['mortality_catastrophe', 'population_density'],
+    selectedRegion: {
+      kind: 'circle',
+      nameZh: '自定义画圈区域',
+      center: athensCenter,
+      radiusKm: 35,
+      bbox: computeCircleBBox(athensCenter, 35),
+    },
+  });
+  assert.equal(circleOverview.hasSelection, true);
+  assert.equal(circleOverview.selectionKind, 'circle');
+  assert.ok(circleOverview.events.some((e) => e.id === 'cat_plague_of_athens'));
+  assert.equal(
+    circleOverview.events.some((e) => e.id === 'cat_sicilian_expedition_catastrophe'),
+    false,
+  );
+  const regionPrompt = formatContextForPrompt(circleOverview, []);
+  assert.match(regionPrompt, /当前地图选中区域结构化上下文/);
+  assert.match(regionPrompt, /雅典大瘟疫/);
+
+  // 3. BBox selection around Syracuse / Eastern Sicily in 413 BCE -> isolates Sicilian Expedition catastrophe
+  const sicilyBBoxOverview = extractRegionOverview({
+    currentYear: -413,
+    selectedRange: null,
+    activeLayers: ['mortality_catastrophe'],
+    selectedRegion: {
+      kind: 'bbox',
+      nameZh: '自定义框选区域',
+      bbox: { minLon: 14.8, minLat: 36.7, maxLon: 15.6, maxLat: 37.4 },
+    },
+  });
+  assert.equal(sicilyBBoxOverview.hasSelection, true);
+  assert.ok(sicilyBBoxOverview.events.some((e) => e.id === 'cat_sicilian_expedition_catastrophe'));
+  assert.equal(
+    sicilyBBoxOverview.events.some((e) => e.id === 'cat_plague_of_athens'),
+    false,
+  );
+
+  // 4. Single Territory selection (`attica_salamis_core`) in 480 BCE -> matches Salamis/Plataea invasion & Attica territory
+  const territoryOverview = extractRegionOverview({
+    currentYear: -480,
+    selectedRange: null,
+    activeLayers: ['population_density', 'mortality_catastrophe'],
+    selectedRegion: {
+      kind: 'territory',
+      territoryId: 'attica_salamis_core',
+      nameZh: '阿提卡本土、比雷埃夫斯三军港与萨拉米斯岛',
+      tier: 'metropolis',
+      bbox: { minLon: 23.32, minLat: 37.64, maxLon: 24.12, maxLat: 38.34 },
+    },
+  });
+  assert.equal(territoryOverview.selectionKind, 'territory');
+  assert.deepEqual(territoryOverview.metrics.matchedTerritoryNames, [
+    '阿提卡本土、比雷埃夫斯三军港与萨拉米斯岛',
+  ]);
+  assert.ok(
+    territoryOverview.events.some((e) => e.id === 'cat_salamis_plataea_persian_invasion'),
+  );
+
+  // 5. Overlaid Layers Coupling (`population_density` + `night_lights`): extracts node-level densities & night-light sources and enforces strong cross-layer correlation in AI prompt
+  const popNightOverview = extractRegionOverview({
+    currentYear: -440,
+    selectedRange: [-454, -431],
+    activeLayers: ['population_density', 'night_lights'],
+    selectedRegion: {
+      kind: 'bbox',
+      nameZh: '自定义框选区域',
+      bbox: { minLon: 23.4, minLat: 37.65, maxLon: 24.15, maxLat: 38.2 },
+    },
+  });
+  assert.equal(popNightOverview.hasSelection, true);
+  assert.ok(popNightOverview.populationDetails.length >= 2, 'must extract Attica population nodes');
+  assert.ok(popNightOverview.nightLightDetails.length >= 2, 'must extract Attica/Laurion night light nodes');
+  assert.ok(
+    (popNightOverview.metrics.peakNightLightPct ?? 0) >= 50,
+    'must compute peak night light percentage',
+  );
+  assert.ok(popNightOverview.events.some((e) => e.category === 'population'));
+  assert.ok(popNightOverview.events.some((e) => e.category === 'night_light'));
+  assert.equal(
+    popNightOverview.events.some((e) => e.category === 'catastrophe' || e.category === 'species'),
+    false,
+    'unselected thematic layers should not pollute overview items when population + night_lights are overlaid',
+  );
+
+  const popNightPrompt = formatContextForPrompt(popNightOverview, []);
+  assert.match(popNightPrompt, /当前叠加图层强相关分析要求/);
+  assert.match(popNightPrompt, /人口密度 × 夜晚光照耦合/);
+  assert.match(popNightPrompt, /【人口密度图层】匹配/);
+  assert.match(popNightPrompt, /【夜晚光照图层】匹配/);
+});
+
+test('language support is strictly restricted to English (en), German (de), and Chinese (zh) across UI helpers, region overview, and AI prompts', async () => {
+  const {
+    formatYearByLang,
+    normalizeAppLanguage,
+    SUPPORTED_LANGUAGES,
+  } = await import('../i18n/translations');
+  const { extractRegionOverview, formatContextForPrompt } = await import('./regionSelector');
+
+  // 1. Strictly only 3 supported languages: Chinese, English, German
+  assert.deepEqual(
+    SUPPORTED_LANGUAGES.map((l) => l.code),
+    ['zh', 'en', 'de'],
+  );
+  assert.equal(normalizeAppLanguage('en'), 'en');
+  assert.equal(normalizeAppLanguage('de'), 'de');
+  assert.equal(normalizeAppLanguage('zh'), 'zh');
+  assert.equal(normalizeAppLanguage('fr'), 'zh');
+  assert.equal(normalizeAppLanguage('ja'), 'zh');
+  assert.equal(normalizeAppLanguage(undefined), 'zh');
+
+  // 2. Year formatting across zh / en / de
+  assert.equal(formatYearByLang(-454, 'zh'), '公元前 454 年');
+  assert.equal(formatYearByLang(-454, 'en'), '454 BCE');
+  assert.equal(formatYearByLang(-454, 'de'), '454 v. Chr.');
+  assert.equal(formatYearByLang(120, 'de'), '120 n. Chr.');
+
+  // 3. English ('en') localized overview & AI context prompt
+  const enOverview = extractRegionOverview({
+    currentYear: -440,
+    selectedRange: [-454, -431],
+    activeLayers: ['population_density', 'night_lights'],
+    selectedRegion: {
+      kind: 'bbox',
+      nameZh: 'Custom Box Selection',
+      bbox: { minLon: 23.4, minLat: 37.65, maxLon: 24.15, maxLat: 38.2 },
+    },
+    language: 'en',
+  });
+  assert.equal(enOverview.timeLabelZh, '454 BCE – 431 BCE');
+  assert.ok(enOverview.activeLayerLabelsZh.includes('Population Density'));
+  assert.ok(enOverview.activeLayerLabelsZh.includes('Nighttime Lights'));
+  assert.ok(enOverview.events.some((e) => /Urban Athens|Laurion/i.test(e.titleZh)));
+  const enPrompt = formatContextForPrompt(enOverview, [], 'en');
+  assert.match(enPrompt, /SELECTED MAP REGION CONTEXT/);
+  assert.match(enPrompt, /ACTIVE OVERLAID LAYER CORRELATION DIRECTIVES/);
+  assert.match(enPrompt, /Population Density × Nighttime Lights:/);
+
+  // 4. German ('de') localized overview & AI context prompt
+  const deOverview = extractRegionOverview({
+    currentYear: -440,
+    selectedRange: [-454, -431],
+    activeLayers: ['population_density', 'night_lights'],
+    selectedRegion: null,
+    language: 'de',
+  });
+  assert.match(deOverview.regionTitleZh, /Globale Ansicht|Athenisches Seereich/);
+  assert.equal(deOverview.timeLabelZh, '454 v. Chr. – 431 v. Chr.');
+  assert.ok(deOverview.activeLayerLabelsZh.includes('Bevölkerungsdichte'));
+  assert.ok(deOverview.activeLayerLabelsZh.includes('Nachtbeleuchtung'));
+  const dePrompt = formatContextForPrompt(deOverview, [], 'de');
+  assert.match(dePrompt, /GLOBALER ZEITLEISTENKONTEXT/);
+  assert.match(dePrompt, /ANFORDERUNGEN ZUR EBENENKORRELATION/);
+  assert.match(dePrompt, /Bevölkerungsdichte × Nachtbeleuchtung:/);
+});
+
+

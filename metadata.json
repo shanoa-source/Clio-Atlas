@@ -1,0 +1,6 @@
+{
+  "name": "文明演进史 · 地球时空地理系统",
+  "description": "基于 Three.js 的交互式人类文明发展史三维地球与二维世界地图可视化平台，支持单年精度时间轴缩放、政权与历史旗帜演进、人口密度、夜间光照、运输航道、物种发现、死亡浩劫及月球与深空竞赛视图。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

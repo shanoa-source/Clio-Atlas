@@ -1,0 +1,225 @@
+{
+  "schemaVersion": "1.0.0",
+  "conventions": {
+    "yearEncoding": "Integer astronomical/historical year: negative for BCE (e.g., -454 = 454 BCE), positive for CE (e.g., 117 = 117 CE).",
+    "coordinates": "WGS84 [longitude, latitude] tuple where longitude is [-180, 180] and latitude is [-90, 90].",
+    "osmBoundaries": "Never ask LLMs to guess OpenStreetMap Relation IDs (`R957707`) or handwrite polygon coordinates. Have AI output accurate `modernAdminNameEn` + `approxBBox` (and optional `countryCode` / `adminLevel`) with `osmIds: []`, then run `npx tsx scripts/resolve-osm-ids.ts <bundle.json>` to automatically query Nominatim / Overpass API and populate real `osmIds`.",
+    "preLinnaeanSpeciesRules": "For pre-Linnaean species (`discoveryYear < 1735`): (1) `discovererZh` / `discovererEn` / `discovererI18n` MUST record the earliest extant textual chronicler or historical witness (e.g., '阿里斯托芬 / 泰奥弗拉斯托斯记述' / 'Recorded by Aristophanes / Theophrastus'), strictly forbidding fabricated ancient discoverers or fictional bureaus; (2) `discoveryYear` MUST anchor to the canonical text's composition year or landmark historical event year (e.g., `-480` for the sacred olive sprouting overnight after the Persian sack of the Acropolis); (3) keep the property key `classicalGreekName` unchanged globally and populate it with the Classical / Canonical Source-Language Name (Ancient Greek for Greece, Pre-Qin/Han-Tang classical name + transliteration for China, Classical Nahuatl for Mesoamerica, etc.).",
+    "supportedLanguages": ["zh", "en", "de"],
+    "supportedOverlayLayers": [
+      "population_density",
+      "night_lights",
+      "transport_routes",
+      "species_discovery",
+      "mortality_catastrophe",
+      "space_race"
+    ],
+    "targetFiles": {
+      "bundle": "data/imports/atlas_bundle.json",
+      "events": "data/events/custom_events.json",
+      "books": "data/booklists/books.json",
+      "promptsJson": "data/prompts/system_prompt.json",
+      "promptsTxt": "data/prompts/system_prompt.txt"
+    },
+    "postProcessingScripts": {
+      "resolveOsmIds": "npx tsx scripts/resolve-osm-ids.ts <input.json> [--out <output.json>] [--dry-run]"
+    },
+    "backendEndpoints": {
+      "inspectSchema": "GET /api/data/schema",
+      "validatePayload": "POST /api/data/validate",
+      "importPayload": "POST /api/data/import",
+      "exportOrQuery": "GET /api/data/export",
+      "overviewPreview": "POST /api/data/overview-preview"
+    }
+  },
+  "templates": {
+    "systemPromptConfig": {
+      "systemPrompt": "",
+      "i18n": {
+        "zh": "",
+        "en": "",
+        "de": ""
+      }
+    },
+    "bookListItem": {
+      "id": "",
+      "title": "",
+      "titleI18n": { "zh": "", "en": "", "de": "" },
+      "author": "",
+      "year": 0,
+      "region": "",
+      "era": "",
+      "startYear": 0,
+      "endYear": 0,
+      "bbox": { "minLon": 0, "minLat": 0, "maxLon": 0, "maxLat": 0 },
+      "relatedLayers": ["population_density"],
+      "isbn": "",
+      "note": "",
+      "noteI18n": { "zh": "", "en": "", "de": "" }
+    },
+    "customHistoricalEvent": {
+      "id": "",
+      "nameZh": "",
+      "title": "",
+      "nameI18n": { "zh": "", "en": "", "de": "" },
+      "startYear": 0,
+      "endYear": 0,
+      "coords": [0, 0],
+      "bbox": { "minLon": 0, "minLat": 0, "maxLon": 0, "maxLat": 0 },
+      "locationNameZh": "",
+      "locationI18n": { "zh": "", "en": "", "de": "" },
+      "category": "",
+      "categoryI18n": { "zh": "", "en": "", "de": "" },
+      "relatedLayers": ["population_density", "night_lights"],
+      "metricLabel": "",
+      "metricI18n": { "zh": "", "en": "", "de": "" },
+      "summary": "",
+      "summaryI18n": { "zh": "", "en": "", "de": "" },
+      "sourceCitation": ""
+    },
+    "polityRecord": {
+      "id": "",
+      "nameZh": "",
+      "nameEn": "",
+      "nameDe": "",
+      "eraSubtitle": "",
+      "eraSubtitleI18n": { "zh": "", "en": "", "de": "" },
+      "startYear": 0,
+      "endYear": 0,
+      "representativeColor": "#1D4ED8",
+      "borderColor": "#60A5FA",
+      "flagId": "imperial_athens",
+      "flagLabel": "",
+      "capitalName": "",
+      "capitalNameI18n": { "zh": "", "en": "", "de": "" },
+      "capitalCoords": [0, 0],
+      "historicalSummary": "",
+      "summaryI18n": { "zh": "", "en": "", "de": "" },
+      "sourceCitation": ""
+    },
+    "territoryRecord": {
+      "id": "",
+      "polityId": "",
+      "nameZh": "",
+      "nameI18n": { "zh": "", "en": "", "de": "" },
+      "validFrom": 0,
+      "validTo": 0,
+      "tier": "metropolis",
+      "modernAdminNameEn": "",
+      "countryCode": "",
+      "adminLevel": 4,
+      "osmIds": [],
+      "approxBBox": { "minLon": 0, "minLat": 0, "maxLon": 0, "maxLat": 0 }
+    },
+    "populationNodeRecord": {
+      "id": "",
+      "nameZh": "",
+      "nameI18n": { "zh": "", "en": "", "de": "" },
+      "center": [0, 0],
+      "radiusDegLon": 0.2,
+      "radiusDegLat": 0.2,
+      "validFrom": 0,
+      "validTo": 0,
+      "densityKeyframes": [[0, 0]],
+      "estimatedTotalNote": "",
+      "noteI18n": { "zh": "", "en": "", "de": "" },
+      "thermalSubZones": [
+        {
+          "coords": [0, 0],
+          "radiusLon": 0.1,
+          "radiusLat": 0.1,
+          "weightFactor": 0.8
+        }
+      ]
+    },
+    "nightLightNodeRecord": {
+      "id": "",
+      "nameZh": "",
+      "nameI18n": { "zh": "", "en": "", "de": "" },
+      "category": "urban_lamps",
+      "coords": [0, 0],
+      "spreadDeg": 0.15,
+      "validFrom": 0,
+      "validTo": 0,
+      "intensityKeyframes": [[0, 0.5]],
+      "description": "",
+      "descriptionI18n": { "zh": "", "en": "", "de": "" }
+    },
+    "transportRouteRecord": {
+      "id": "",
+      "nameZh": "",
+      "nameI18n": { "zh": "", "en": "", "de": "" },
+      "routeType": "maritime",
+      "originName": "",
+      "originNameI18n": { "zh": "", "en": "", "de": "" },
+      "destinationName": "",
+      "destinationNameI18n": { "zh": "", "en": "", "de": "" },
+      "openedYear": 0,
+      "closedYear": 0,
+      "cargoSummary": "",
+      "cargoSummaryI18n": { "zh": "", "en": "", "de": "" },
+      "waypoints": [
+        [0, 0],
+        [0.5, 0.5]
+      ],
+      "usageKeyframes": [[0, 0]],
+      "sourceCitation": ""
+    },
+    "speciesDiscoveryRecord": {
+      "id": "",
+      "commonNameZh": "",
+      "commonNameI18n": { "zh": "", "en": "", "de": "" },
+      "scientificName": "",
+      "classicalGreekName": "",
+      "kingdom": "plantae",
+      "discovererZh": "",
+      "discovererEn": "",
+      "discovererI18n": { "zh": "", "en": "", "de": "" },
+      "discoveryYear": 0,
+      "locationNameZh": "",
+      "locationNameI18n": { "zh": "", "en": "", "de": "" },
+      "coords": [0, 0],
+      "historicalNote": "",
+      "historicalNoteI18n": { "zh": "", "en": "", "de": "" },
+      "sourceCitation": ""
+    },
+    "mortalityCatastropheRecord": {
+      "id": "",
+      "nameZh": "",
+      "nameI18n": { "zh": "", "en": "", "de": "" },
+      "causeCategory": "warfare",
+      "startYear": 0,
+      "endYear": 0,
+      "locationNameZh": "",
+      "locationNameI18n": { "zh": "", "en": "", "de": "" },
+      "coords": [0, 0],
+      "spreadDeg": 0.2,
+      "estimatedDeaths": 0,
+      "historicalNote": "",
+      "historicalNoteI18n": { "zh": "", "en": "", "de": "" },
+      "sourceCitation": "",
+      "thermalSubZones": [
+        {
+          "coords": [0, 0],
+          "radiusLon": 0.1,
+          "radiusLat": 0.1,
+          "weightFactor": 0.75
+        }
+      ]
+    },
+    "spaceMissionRecord": {
+      "id": "",
+      "nameZh": "",
+      "nameI18n": { "zh": "", "en": "", "de": "" },
+      "agency": "",
+      "originBodyId": "earth",
+      "targetBodyId": "moon",
+      "launchYear": 1969,
+      "arrivalYear": 1969,
+      "missionStatusZh": "",
+      "missionStatusI18n": { "zh": "", "en": "", "de": "" },
+      "orbitProbes": [],
+      "surfaceBases": []
+    }
+  }
+}

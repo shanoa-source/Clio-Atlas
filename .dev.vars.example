@@ -1,0 +1,4 @@
+# Local secrets for `npx wrangler pages dev dist` (Cloudflare Pages Functions local emulator)
+# Copy this file to `.dev.vars` for local Wrangler testing (never commit `.dev.vars`).
+GEMINI_API_KEY="MY_GEMINI_API_KEY"
+CUSTOM_SYSTEM_PROMPT=""

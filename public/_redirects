@@ -1,0 +1,2 @@
+# Cloudflare Pages SPA fallback (non-/api/* client routes resolve to index.html)
+/* /index.html 200
