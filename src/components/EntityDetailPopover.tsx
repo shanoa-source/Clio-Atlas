@@ -317,6 +317,14 @@ export const EntityDetailPopover: React.FC<EntityDetailPopoverProps> = ({
                     <span className="whitespace-nowrap">
                       {ui.controlledTerritories(selectedEntity.regionCount)}
                     </span>
+                    {selectedEntity.phase.boundaryMode === 'unbounded' && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="text-amber-300/90 font-sans">
+                          {ui.unboundedSphereLabel}
+                        </span>
+                      </>
+                    )}
                   </div>
                   {localizedClickedTerritory && (
                     <div className="text-slate-200 font-medium">

@@ -28,8 +28,8 @@ export interface LanguageOption {
  * Strictly limited to Chinese, English, and German per product specification.
  */
 export const SUPPORTED_LANGUAGES: readonly LanguageOption[] = [
-  { code: 'zh', shortLabel: '中文', nativeLabel: '中文', htmlLang: 'zh-CN' },
   { code: 'en', shortLabel: 'EN', nativeLabel: 'English', htmlLang: 'en' },
+  { code: 'zh', shortLabel: '中文', nativeLabel: '中文', htmlLang: 'zh-CN' },
   { code: 'de', shortLabel: 'DE', nativeLabel: 'Deutsch', htmlLang: 'de' },
 ] as const;
 
@@ -37,7 +37,7 @@ export function normalizeAppLanguage(val: unknown): AppLanguage {
   if (val === 'en' || val === 'de' || val === 'zh') {
     return val;
   }
-  return 'zh';
+  return 'en';
 }
 
 export function formatYearByLang(year: number, lang: AppLanguage, compact = false): string {
@@ -223,8 +223,8 @@ export function localizeNightLightCategory(
 
 export const UI_TEXT = {
   zh: {
-    pageTitle: '文明演进史 · 全球历史时空地理平台',
-    brandShort: '文明演进史',
+    pageTitle: 'Clio-Atlas',
+    brandShort: 'Clio-Atlas',
     bootAriaLabel: '正在校准三维地球与高精度历史政区地块',
     bootSubtitle: '全球历史时空地理观测系统',
     bootStageEngine: '正在校准三维球面矢量引擎',
@@ -310,6 +310,7 @@ export const UI_TEXT = {
     inspectorAria: '选中对象详情',
     closeInspectorAria: '关闭详情卡片',
     controlledTerritories: (n: number) => `控制辖区 ${n} 处`,
+    unboundedSphereLabel: '无界疆域（核心区 · 辐射带 · 荒原衰减）',
     clickedTerritoryLabel: '当前点击政区：',
     sourceCitationLabel: '文献出处：',
     recordedScholarLabel: '记述学者：',
@@ -414,8 +415,8 @@ export const UI_TEXT = {
     zeroProbesUnit: '0 具',
   },
   en: {
-    pageTitle: 'Atlas of Civilization · Global Historical GIS Platform',
-    brandShort: 'Atlas of Civilization',
+    pageTitle: 'Clio-Atlas',
+    brandShort: 'Clio-Atlas',
     bootAriaLabel: 'Calibrating 3D Earth and historical territory parcels',
     bootSubtitle: 'Global Spatio-Temporal Historical Observatory',
     bootStageEngine: 'Calibrating 3D Geodesic Vector Engine',
@@ -504,6 +505,7 @@ export const UI_TEXT = {
     inspectorAria: 'Selected Feature Details',
     closeInspectorAria: 'Close detail card',
     controlledTerritories: (n: number) => `${n} territories controlled`,
+    unboundedSphereLabel: 'Unbounded Sphere (Core · Influence · Frontier Fade)',
     clickedTerritoryLabel: 'Clicked Territory: ',
     sourceCitationLabel: 'Sources: ',
     recordedScholarLabel: 'Scholar: ',
@@ -608,8 +610,8 @@ export const UI_TEXT = {
     zeroProbesUnit: '0',
   },
   de: {
-    pageTitle: 'Atlas der Zivilisationen · Historische Geo-Plattform',
-    brandShort: 'Atlas der Zivilisationen',
+    pageTitle: 'Clio-Atlas',
+    brandShort: 'Clio-Atlas',
     bootAriaLabel: '3D-Globus und historische Gebiete werden kalibriert',
     bootSubtitle: 'Globales Historisches Raum-Zeit-Observatorium',
     bootStageEngine: '3D-Geodäsie-Vektor-Engine wird kalibriert',
@@ -698,6 +700,7 @@ export const UI_TEXT = {
     inspectorAria: 'Objektdetails',
     closeInspectorAria: 'Detailkarte schließen',
     controlledTerritories: (n: number) => `${n} kontrollierte Gebiete`,
+    unboundedSphereLabel: 'Grenzloser Einflussraum (Kern · Strahlung · Auslauf)',
     clickedTerritoryLabel: 'Angeklicktes Gebiet: ',
     sourceCitationLabel: 'Quellen: ',
     recordedScholarLabel: 'Gelehrter: ',
@@ -915,7 +918,10 @@ export function localizePolity(
 
   return {
     name: (lang === 'de' && rec.nameDe ? rec.nameDe : t?.name) || embeddedName || phase.nameZh,
-    secondaryName: lang === 'de' ? phase.nameEn : phase.nameZh,
+    secondaryName:
+      lang === 'de'
+        ? phase.nameEn
+        : embeddedEra || t?.eraSubtitle || embeddedCap || phase.capitalName,
     eraSubtitle: embeddedEra || t?.eraSubtitle || phase.eraSubtitle,
     capitalName: embeddedCap || t?.capitalName || phase.capitalName,
     summary: embeddedSum || t?.summary || phase.historicalSummary,

@@ -122,17 +122,28 @@ export function sanitizeCartoDarkMatterStyle(
           source: cloned.source,
           'source-layer': 'water',
           filter: ['==', ['geometry-type'], 'Polygon'],
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
           paint: {
             'line-color': coastlineColor,
-            'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.7, 5, 1.1, 10, 1.45],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.78, 5, 1.18, 10, 1.55],
+            'line-blur': 0.36,
             'line-opacity': 0.92,
           },
         });
       }
     } else if (cloned.id === 'waterway' && cloned.type === 'line') {
+      cloned.layout = {
+        ...(cloned.layout || {}),
+        'line-cap': 'round',
+        'line-join': 'round',
+      };
       cloned.paint = {
         ...cloned.paint,
         'line-color': riverColor,
+        'line-blur': 0.28,
       };
       waterAndRiverLayers.push(cloned);
     } else if (cloned.type === 'symbol') {
@@ -199,9 +210,14 @@ export function sanitizeCartoDarkMatterStyle(
         id: 'ne-land-coast-underlay',
         type: 'line',
         source: 'ne-land-underlay',
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
         paint: {
           'line-color': coastlineColor,
-          'line-width': 0.85,
+          'line-width': 0.95,
+          'line-blur': 0.35,
           'line-opacity': 0.85,
         },
       },

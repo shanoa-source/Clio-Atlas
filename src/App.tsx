@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AiModelConfigModal } from './components/AiModelConfigModal';
 import { AtlasBootOverlay } from './components/AtlasBootOverlay';
@@ -69,12 +69,12 @@ export default function App() {
     typeof window !== 'undefined' ? checkIsIntroPath(window.location.pathname) : false,
   );
 
-  // Language option strictly restricted to Chinese ('zh'), English ('en'), and German ('de')
+  // Language option strictly restricted to English ('en', default), Chinese ('zh'), and German ('de')
   const [language, setLanguage] = useState<AppLanguage>(() => {
     try {
       return normalizeAppLanguage(window.localStorage.getItem('civ_atlas_lang'));
     } catch {
-      return 'zh';
+      return 'en';
     }
   });
 
@@ -98,7 +98,7 @@ export default function App() {
   );
   const [customEvents, setCustomEvents] = useState<CustomHistoricalEvent[]>([]);
   const [dataLayerRev, setDataLayerRev] = useState<number>(0);
-  const [hoverCoords, setHoverCoords] = useState<[number, number] | null>(null);
+  const hoverCoordsListenerRef = useRef<((coords: [number, number] | null) => void) | null>(null);
   const [cameraCommand, setCameraCommand] = useState<{
     id: number;
     kind: 'zoom_in' | 'zoom_out' | 'reset_north' | 'fly_to';
@@ -153,7 +153,9 @@ export default function App() {
   const [parcelsRendered, setParcelsRendered] = useState<boolean>(false);
   const [minBootElapsed, setMinBootElapsed] = useState<boolean>(false);
 
-  const { loadingSnapshot: osmSnapshot } = useOsmResolvedTerritories(currentYear);
+  const { loadingSnapshot: osmSnapshot } = useOsmResolvedTerritories(
+    bootDismissed ? 0 : currentYear,
+  );
 
   // Minimum optical calibration settle (420ms) + airgapped failsafe timeout (8500ms)
   useEffect(() => {
@@ -199,9 +201,22 @@ export default function App() {
       // Ignore storage write errors in restricted contexts
     }
     const langMeta = SUPPORTED_LANGUAGES.find((l) => l.code === language);
-    document.documentElement.lang = langMeta?.htmlLang ?? 'zh-CN';
+    document.documentElement.lang = langMeta?.htmlLang ?? 'en';
     document.title = UI_TEXT[language].pageTitle;
   }, [language]);
+
+  useEffect(() => {
+    setSelectedEntity((prev) => {
+      if (!prev) return null;
+      if (
+        prev.kind === 'polity' &&
+        (currentYear < prev.phase.startYear || currentYear > prev.phase.endYear)
+      ) {
+        return null;
+      }
+      return prev;
+    });
+  }, [currentYear]);
 
   // Load all backend-detected datasets (`datasetsBundle`), runtime `bundle`, and `customEvents` uniformly
   useEffect(() => {
@@ -338,6 +353,22 @@ export default function App() {
     setParcelsRendered(true);
   }, []);
 
+  const handleHoverCoordsChange = useCallback((coords: [number, number] | null) => {
+    hoverCoordsListenerRef.current?.(coords);
+  }, []);
+
+  const subscribeHoverCoords = useCallback(
+    (listener: (coords: [number, number] | null) => void) => {
+      hoverCoordsListenerRef.current = listener;
+      return () => {
+        if (hoverCoordsListenerRef.current === listener) {
+          hoverCoordsListenerRef.current = null;
+        }
+      };
+    },
+    [],
+  );
+
   if (isIntroRoute) {
     return (
       <IntroStaticPage
@@ -377,7 +408,7 @@ export default function App() {
         activeLayers={activeLayers}
         projectionMode={projectionMode}
         spaceStage={spaceStage}
-        hoverCoords={hoverCoords}
+        subscribeHoverCoords={subscribeHoverCoords}
         onOpenIntro={() => {
           setIsPlaying(false);
           navigateTo('/intro');
@@ -414,7 +445,7 @@ export default function App() {
                 onSelectEntity={setSelectedEntity}
                 onSelectRegion={handleSelectRegion}
                 onFinishDrawTool={() => setDrawToolMode('none')}
-                onHoverCoordsChange={setHoverCoords}
+                onHoverCoordsChange={handleHoverCoordsChange}
                 onMapStyleReady={handleMapStyleReady}
                 onInitialParcelsReady={handleInitialParcelsReady}
               />

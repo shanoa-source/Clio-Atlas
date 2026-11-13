@@ -85,6 +85,7 @@ test('validateImportPayload strictly rejects malformed coordinates, handwritten 
         endYear: -450, // Inverted: startYear > endYear
         representativeColor: 'blue', // Not #RRGGBB
         borderColor: '#60A5FA',
+        boundaryMode: 'fuzzy', // Invalid enum value (must be 'demarcated' or 'unbounded')
         flagId: 'imperial_athens',
         flagLabel: '',
         capitalName: 'Test',
@@ -141,6 +142,7 @@ test('validateImportPayload strictly rejects malformed coordinates, handwritten 
   const errorPaths = res.errors.map((e) => e.path);
   assert.ok(errorPaths.includes('polities[0].startYear'));
   assert.ok(errorPaths.includes('polities[0].representativeColor'));
+  assert.ok(errorPaths.includes('polities[0].boundaryMode'), 'must reject invalid boundaryMode');
   assert.ok(errorPaths.includes('polities[0].capitalCoords[0]'));
   assert.ok(errorPaths.includes('territories[0]'), 'must reject handwritten coordinates field');
   assert.ok(errorPaths.includes('territories[0].osmIds[0]'), 'must reject invalid OSM ID format');
@@ -646,9 +648,13 @@ test('Backend Express HTTP endpoints (/api/data/schema, /validate, /import, /exp
 
 test('Backend dataset auto-discovery merges all data/datasets/*.json files and exposes them via GET /api/overview-config', async () => {
   const rootDetection = discoverBackendDatasetsFromDisk(process.cwd());
-  assert.deepEqual(rootDetection.datasetIds, ['classical_athens', 'roman_principate']);
-  assert.equal(rootDetection.mergedBundle.polities.length, 8);
-  assert.equal(rootDetection.mergedBundle.territories.length, 20);
+  assert.deepEqual(rootDetection.datasetIds, [
+    'classical_athens',
+    'mycenaean_minoan_bronze',
+    'roman_principate',
+  ]);
+  assert.equal(rootDetection.mergedBundle.polities.length, 10);
+  assert.equal(rootDetection.mergedBundle.territories.length, 24);
   assert.equal(rootDetection.mergedBundle.transportRoutes.length, 12);
 
   // Verify dropping a new dataset JSON file on the backend is auto-detected without frontend changes

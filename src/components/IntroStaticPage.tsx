@@ -47,7 +47,7 @@ const INTRO_COPY: Record<AppLanguage, IntroLocalizedCopy> = {
     navPrivacy: 'Privacy Policy',
     launchCta: '进入三维地图',
     heroMeta: 'Hosted on Cloudflare Pages & Workers · 全球历史地理信息系统',
-    projectName: 'Clio Atlas · 全球历史时空地理平台',
+    projectName: 'Clio-Atlas · 全球历史时空地理平台',
     slogan: '以单年精度时间标尺与真实测绘政区边界，在三维地球与深空黄道上重现人类文明演进。',
     overviewHeading: '项目简介',
     overviewParagraphs: [
@@ -136,7 +136,7 @@ const INTRO_COPY: Record<AppLanguage, IntroLocalizedCopy> = {
     navPrivacy: 'Privacy Policy',
     launchCta: 'Launch 3D Atlas',
     heroMeta: 'Hosted on Cloudflare Pages & Workers · Global Historical GIS',
-    projectName: 'Clio Atlas · Global Historical Spatio-Temporal GIS',
+    projectName: 'Clio-Atlas · Global Historical Spatio-Temporal GIS',
     slogan:
       'Charting the spatio-temporal evolution of human civilizations across a single-year precision 3D globe and deep-space ecliptic.',
     overviewHeading: 'Project Overview',
@@ -226,7 +226,7 @@ const INTRO_COPY: Record<AppLanguage, IntroLocalizedCopy> = {
     navPrivacy: 'Privacy Policy',
     launchCta: '3D-Atlas starten',
     heroMeta: 'Hosted on Cloudflare Pages & Workers · Historisches Raum-Zeit-GIS',
-    projectName: 'Clio Atlas · Globale Historische Raum-Zeit-GIS-Plattform',
+    projectName: 'Clio-Atlas · Globale Historische Raum-Zeit-GIS-Plattform',
     slogan:
       'Die raum-zeitliche Entwicklung menschlicher Zivilisationen mit einjähriger Präzision auf einem 3D-Globus und in der Ekliptik kartieren.',
     overviewHeading: 'Projektübersicht',
@@ -336,7 +336,7 @@ export const IntroStaticPage: React.FC<IntroStaticPageProps> = ({
             onClick={handleLaunchClick}
             className="text-base font-bold tracking-tight text-slate-100 hover:text-white transition-colors whitespace-nowrap shrink-0"
           >
-            Clio Atlas
+            Clio-Atlas
           </a>
 
           <nav
@@ -644,7 +644,7 @@ export const IntroStaticPage: React.FC<IntroStaticPageProps> = ({
 
       <footer className="border-t border-slate-800/80 py-8 px-6 text-xs text-slate-500">
         <div className="mx-auto max-w-[1120px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>Clio Atlas · Hosted on Cloudflare Pages / Workers</div>
+          <div>Clio-Atlas · Hosted on Cloudflare Pages / Workers</div>
           <div className="flex flex-wrap items-center gap-4 font-mono">
             <a
               href="mailto:devteamcontact@clioatlas.org"

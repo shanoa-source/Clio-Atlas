@@ -13,15 +13,21 @@ compatibility_flags = ["nodejs_compat"]
 #   - GEMINI_API_KEY (Required for POST /api/chat)
 #   - CUSTOM_SYSTEM_PROMPT (Optional system prompt override)
 
-# Optional Cloudflare Workers KV bindings for persistent runtime data imports & global OSM geometry cache:
-# 1. `npx wrangler kv namespace create ATLAS_DATA_KV`
-# 2. `npx wrangler kv namespace create OSM_CACHE_KV`
-# 3. Uncomment below and fill in your namespace IDs:
-#
-# [[kv_namespaces]]
-# binding = "ATLAS_DATA_KV"
-# id = "REPLACE_WITH_ATLAS_DATA_KV_NAMESPACE_ID"
-#
-# [[kv_namespaces]]
-# binding = "OSM_CACHE_KV"
-# id = "REPLACE_WITH_OSM_CACHE_KV_NAMESPACE_ID"
+# Cloudflare Workers KV bindings (Production + Local Dev):
+[[kv_namespaces]]
+binding = "ATLAS_DATA_KV"
+id = "25cf4a612fea487a94ba54ab0e927229"
+
+[[kv_namespaces]]
+binding = "OSM_CACHE_KV"
+id = "8db9692e8e754b119604ef1e2d3cdd19"
+
+# Cloudflare Pages Preview branch deployments (kv_namespaces is non-inheritable across environments):
+[env.preview]
+[[env.preview.kv_namespaces]]
+binding = "ATLAS_DATA_KV"
+id = "25cf4a612fea487a94ba54ab0e927229"
+
+[[env.preview.kv_namespaces]]
+binding = "OSM_CACHE_KV"
+id = "8db9692e8e754b119604ef1e2d3cdd19"

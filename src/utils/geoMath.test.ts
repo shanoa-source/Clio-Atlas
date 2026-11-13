@@ -66,7 +66,11 @@ if (fs.existsSync(diskCachePath)) {
 
 test('zero handwritten polygon coordinates exist in unified atlasDataLayer territories; all regions bind canonical OpenStreetMap IDs', () => {
   const allTerritories = getTerritoryRegions();
-  assert.equal(allTerritories.length, 20, 'Expected 12 Classical Athens + 8 Roman Principate territories');
+  assert.equal(
+    allTerritories.length,
+    24,
+    'Expected 12 Classical Athens + 4 Bronze Age Aegean + 8 Roman Principate territories',
+  );
   for (const reg of allTerritories) {
     assert.equal('polygon' in (reg as any), false, `Region ${reg.id} must not have handwritten polygon`);
     assert.equal(
@@ -84,19 +88,25 @@ test('zero handwritten polygon coordinates exist in unified atlasDataLayer terri
   assert.ok(uniqueOsmIds.length >= 55);
 });
 
-test('dynamic dataset year bounds derive [-500, 180] and activate Classical Athens (-500..-404) & Roman Principate (-27..180) accurately', () => {
+test('dynamic dataset year bounds derive [-1600, 180] and activate Bronze Age (-1600..-1180), Classical Athens (-500..-404) & Roman Principate (-27..180) accurately', () => {
   const bounds = computeDatasetYearBounds();
-  assert.deepEqual(bounds, { minYear: -500, maxYear: 180 });
+  assert.deepEqual(bounds, { minYear: -1600, maxYear: 180 });
 
   const presets = getAtlasDatasetPresets();
+  assert.ok(
+    presets.some(
+      (p) => p.id === 'mycenaean_minoan_bronze' && p.minYear === -1600 && p.maxYear === -1180,
+    ),
+  );
   assert.ok(presets.some((p) => p.id === 'classical_athens' && p.minYear === -500 && p.maxYear === -404));
   assert.ok(presets.some((p) => p.id === 'roman_principate' && p.minYear === -27 && p.maxYear === 180));
 
-  // Outside dataset time windows: before 500 BCE, between 403 BCE and 28 BCE, and after 180 CE
+  // Outside dataset time windows: before 1600 BCE, between 1179..501 BCE, between 403..28 BCE, and after 180 CE
+  assert.equal(getActivePolityPhase(-1601), null);
+  assert.equal(getActivePolityPhase(-1179), null);
   assert.equal(getActivePolityPhase(-501), null);
   assert.equal(getActiveTerritoryRegions(-501).length, 0);
   assert.equal(resolveActiveOsmTerritories(-501).length, 0);
-  assert.equal(getActivePolityPhase(-1200), null);
   assert.equal(getActivePolityPhase(-403), null);
   assert.equal(getActiveTerritoryRegions(-403).length, 0);
   assert.equal(resolveActiveOsmTerritories(-403).length, 0);
@@ -745,17 +755,18 @@ test('language support is strictly restricted to English (en), German (de), and 
   } = await import('../i18n/translations');
   const { extractRegionOverview, formatContextForPrompt } = await import('./regionSelector');
 
-  // 1. Strictly only 3 supported languages: Chinese, English, German
+  // 1. Strictly only 3 supported languages: English (default), Chinese, German
   assert.deepEqual(
     SUPPORTED_LANGUAGES.map((l) => l.code),
-    ['zh', 'en', 'de'],
+    ['en', 'zh', 'de'],
   );
   assert.equal(normalizeAppLanguage('en'), 'en');
   assert.equal(normalizeAppLanguage('de'), 'de');
   assert.equal(normalizeAppLanguage('zh'), 'zh');
-  assert.equal(normalizeAppLanguage('fr'), 'zh');
-  assert.equal(normalizeAppLanguage('ja'), 'zh');
-  assert.equal(normalizeAppLanguage(undefined), 'zh');
+  assert.equal(normalizeAppLanguage('fr'), 'en');
+  assert.equal(normalizeAppLanguage('ja'), 'en');
+  assert.equal(normalizeAppLanguage(undefined), 'en');
+  assert.equal(normalizeAppLanguage(null), 'en');
 
   // 2. Year formatting across zh / en / de
   assert.equal(formatYearByLang(-454, 'zh'), '公元前 454 年');
@@ -864,5 +875,240 @@ test('lossless spatial-bbox seam dissolution dissolves adjacent municipal edges 
   }
 });
 
+test('Clio-Atlas webpage title & English default language are uniformly configured across index.html and UI_TEXT', async () => {
+  const { UI_TEXT } = await import('../i18n/translations');
+  assert.equal(UI_TEXT.en.pageTitle, 'Clio-Atlas');
+  assert.equal(UI_TEXT.zh.pageTitle, 'Clio-Atlas');
+  assert.equal(UI_TEXT.de.pageTitle, 'Clio-Atlas');
+  assert.equal(UI_TEXT.en.brandShort, 'Clio-Atlas');
+  assert.equal(UI_TEXT.zh.brandShort, 'Clio-Atlas');
+  assert.equal(UI_TEXT.de.brandShort, 'Clio-Atlas');
 
+  const indexHtml = fs.readFileSync(path.join(process.cwd(), 'index.html'), 'utf8');
+  assert.match(indexHtml, /<html\s+lang="en"/);
+  assert.match(indexHtml, /<title>Clio-Atlas<\/title>/);
+  assert.match(indexHtml, /property="og:title"\s+content="Clio-Atlas"/);
+  assert.equal(indexHtml.includes('<title>文明演进史'), false);
+});
+
+test('borderless ancient civilizations (boundaryMode: unbounded) emit Core (0.60..0.85), wider Influence (0.20..0.40), Terra Nullius falloff (-> 0), and strict zero ocean bleed while demarcated states stay bordered', async () => {
+  const {
+    computeUnboundedPolityField,
+    evaluateUnboundedFieldAlpha,
+    isUnboundedPolity,
+  } = await import('./unboundedPolityField');
+  const { getPolityPhases } = await import('../shared/atlasDataLayer');
+
+  const allPolities = getPolityPhases();
+  const unboundedIds = allPolities.filter((p) => isUnboundedPolity(p)).map((p) => p.id);
+  assert.deepEqual(
+    unboundedIds.sort(),
+    ['minoan_neopalatial_thalassocracy', 'mycenaean_palace_koine'],
+    'Only borderless Bronze Age civilizations should use unbounded sphere rendering',
+  );
+
+  // Demarcated Classical Athens (-454) & Roman Principate (117) produce zero unbounded emitters
+  const athens454 = getActivePolityPhases(-454);
+  assert.equal(athens454.every((p) => !isUnboundedPolity(p)), true);
+  const emptyDemarcatedField = computeUnboundedPolityField(
+    athens454,
+    resolveActiveOsmTerritories(-454),
+  );
+  assert.equal(emptyDemarcatedField.shells.length, 0);
+  assert.equal(emptyDemarcatedField.glazeParcels.length, 0);
+
+  // Mycenaean Palace Koine at 1450 BCE (-1450)
+  const mycPolities = getActivePolityPhases(-1450);
+  assert.equal(mycPolities.length, 1);
+  assert.equal(mycPolities[0].id, 'mycenaean_palace_koine');
+  assert.equal(isUnboundedPolity(mycPolities[0]), true);
+
+  const mycTerritories = resolveActiveOsmTerritories(-1450);
+  const mycField = computeUnboundedPolityField(mycPolities, mycTerritories);
+  assert.ok(mycField.shells.length >= 60, 'Expected concentric organic draped polygon shells');
+
+  // 1. Core Administrative Zone (Mycenae / Argolid [22.7562, 37.7308]): opacity in [0.60, 0.85]
+  const coreAlpha = evaluateUnboundedFieldAlpha(
+    mycField,
+    'mycenaean_palace_koine',
+    22.7562,
+    37.7308,
+    mycTerritories,
+  );
+  assert.ok(
+    coreAlpha >= 0.6 && coreAlpha <= 0.85,
+    `Expected Mycenae Core Zone alpha in [0.60, 0.85], got ${coreAlpha}`,
+  );
+
+  // 2. Radiating Influence Zone (Western Anatolia / Miletus [27.32, 37.45] & Thessaly [22.85, 39.15]): opacity in [0.20, 0.40]
+  const anatoliaInfluenceAlpha = evaluateUnboundedFieldAlpha(
+    mycField,
+    'mycenaean_palace_koine',
+    27.32,
+    37.45,
+    mycTerritories,
+  );
+  const thessalyInfluenceAlpha = evaluateUnboundedFieldAlpha(
+    mycField,
+    'mycenaean_palace_koine',
+    22.85,
+    39.15,
+    mycTerritories,
+  );
+  assert.ok(
+    anatoliaInfluenceAlpha >= 0.2 && anatoliaInfluenceAlpha <= 0.4,
+    `Expected Western Anatolia Influence Zone alpha in [0.20, 0.40], got ${anatoliaInfluenceAlpha}`,
+  );
+  assert.ok(
+    thessalyInfluenceAlpha >= 0.2 && thessalyInfluenceAlpha <= 0.4,
+    `Expected Thessaly Influence Zone alpha in [0.20, 0.40], got ${thessalyInfluenceAlpha}`,
+  );
+
+  // 3. Smooth outer falloff to Terra Nullius (Alpha -> 0 in interior Balkans / central Anatolia)
+  const frontierAlpha = evaluateUnboundedFieldAlpha(
+    mycField,
+    'mycenaean_palace_koine',
+    22.85,
+    40.35,
+    mycTerritories,
+  );
+  const terraNulliusAlpha = evaluateUnboundedFieldAlpha(
+    mycField,
+    'mycenaean_palace_koine',
+    22.5,
+    42.8,
+    mycTerritories,
+  );
+  assert.ok(coreAlpha > thessalyInfluenceAlpha, 'Core alpha must exceed Influence alpha');
+  assert.ok(thessalyInfluenceAlpha > frontierAlpha, 'Influence alpha must decay toward frontier');
+  assert.equal(terraNulliusAlpha, 0, 'Distant Terra Nullius alpha must reach exact 0');
+
+  // 4. Strict coastline clipping: open Cretan Sea & Myrtoan Sea evaluate to exact 0
+  assert.equal(
+    evaluateUnboundedFieldAlpha(mycField, 'mycenaean_palace_koine', 25.0, 36.0, mycTerritories),
+    0,
+    'Open Cretan Sea must have 0 unbounded alpha (zero coastline overflow)',
+  );
+  assert.equal(
+    evaluateUnboundedFieldAlpha(mycField, 'mycenaean_palace_koine', 23.6, 36.7, mycTerritories),
+    0,
+    'Open Myrtoan Sea must have 0 unbounded alpha (zero coastline overflow)',
+  );
+});
+
+test('smoothBoundaryMultiLineString removes sub-kilometer jagged hairpin burrs and rounds acute corners while keeping closed loops closed', async () => {
+  const { smoothBoundaryMultiLineString } = await import('../services/osmBoundaryService');
+
+  // Construct a closed ring with an artificial sharp 400m hairpin burr spike at [23.75, 38.0032]
+  const jaggedClosedLoop = {
+    type: 'MultiLineString' as const,
+    coordinates: [
+      [
+        [23.7, 37.95],
+        [23.7498, 38.0],
+        [23.75, 38.0032], // sharp micro-burr spike (~350m out and right back)
+        [23.7502, 38.0],
+        [23.8, 38.0],
+        [23.8, 37.95],
+        [23.7, 37.95],
+      ] as [number, number][],
+    ],
+  };
+
+  const smoothed = smoothBoundaryMultiLineString(jaggedClosedLoop);
+  assert.equal(smoothed.coordinates.length, 1);
+  const ring = smoothed.coordinates[0];
+  assert.ok(ring.length > 8, 'Chaikin corner smoothing should densify rounded turns');
+
+  // Closed loop must remain strictly closed
+  assert.deepEqual(ring[0], ring[ring.length - 1], 'Closed boundary ring must stay closed');
+
+  // Hairpin spike tip above lat 38.002 must be eliminated
+  const maxLat = Math.max(...ring.map((pt) => pt[1]));
+  assert.ok(
+    maxLat <= 38.0005,
+    `Expected jagged hairpin burr at 38.0032 to be removed, got maxLat=${maxLat}`,
+  );
+});
+
+test('unbounded ancient civilization sphere computation & 350-year Bronze Age timeline scrub execute in < 35ms total with compact draped polygon shells', async () => {
+  const {
+    computeUnboundedPolityField,
+    evaluateUnboundedFieldAlpha,
+    hitTestUnboundedPolityAtLngLat,
+  } = await import('./unboundedPolityField');
+
+  // Cold-ish transition across Minoan (-1500) -> Mycenaean (-1450) + 350 consecutive year ticks (-1550..-1201)
+  const tStart = performance.now();
+  let lastTerrRef: any = null;
+  let sameRefCount = 0;
+
+  for (let yr = -1550; yr <= -1201; yr++) {
+    const pols = getActivePolityPhases(yr);
+    const terrs = resolveActiveOsmTerritories(yr);
+    if (terrs === lastTerrRef) {
+      sameRefCount++;
+    }
+    lastTerrRef = terrs;
+    const field = computeUnboundedPolityField(pols, terrs, { opacityScale: 1.0 });
+    assert.ok(
+      field.shells.length > 0 && field.shells.length <= 200,
+      `Expected compact draped shell count (<= 200) at year ${yr}, got ${field.shells.length}`,
+    );
+  }
+  const totalElapsedMs = performance.now() - tStart;
+  assert.ok(
+    totalElapsedMs < 35,
+    `Expected 350 Bronze Age unbounded year ticks to complete in < 35ms, took ${totalElapsedMs.toFixed(2)}ms`,
+  );
+  assert.ok(
+    sameRefCount >= 345,
+    `Expected reference-stable activeTerritories across consecutive Bronze Age years, got ${sameRefCount}/350`,
+  );
+
+  // Verify Minoan (-1500) Knossos Core Zone [25.1631, 35.2979] also sits cleanly in [0.60, 0.85] with zero sea bleed
+  const minoanPols = getActivePolityPhases(-1500);
+  const minoanTerrs = resolveActiveOsmTerritories(-1500);
+  const minoanField = computeUnboundedPolityField(minoanPols, minoanTerrs);
+  const knossosAlpha = evaluateUnboundedFieldAlpha(
+    minoanField,
+    'minoan_neopalatial_thalassocracy',
+    25.1631,
+    35.2979,
+    minoanTerrs,
+  );
+  assert.ok(
+    knossosAlpha >= 0.6 && knossosAlpha <= 0.85,
+    `Expected Minoan Knossos Core Zone alpha in [0.60, 0.85], got ${knossosAlpha}`,
+  );
+  assert.equal(
+    evaluateUnboundedFieldAlpha(
+      minoanField,
+      'minoan_neopalatial_thalassocracy',
+      25.16,
+      35.75,
+      minoanTerrs,
+    ),
+    0,
+    'Sea of Crete just north of Heraklion must evaluate to exact 0 alpha',
+  );
+
+  const mycPols = getActivePolityPhases(-1450);
+  const mycTerrs = resolveActiveOsmTerritories(-1450);
+  assert.equal(
+    hitTestUnboundedPolityAtLngLat(22.7562, 37.7308, mycPols, mycTerrs)?.id,
+    'mycenaean_palace_koine',
+    'Mycenae heartland must hit Mycenaean unbounded sphere',
+  );
+  assert.equal(
+    hitTestUnboundedPolityAtLngLat(22.85, 39.15, mycPols, mycTerrs)?.id,
+    'mycenaean_palace_koine',
+    'Thessaly continental influence belt must hit Mycenaean unbounded sphere',
+  );
+  assert.equal(
+    hitTestUnboundedPolityAtLngLat(25.0, 36.0, mycPols, mycTerrs),
+    null,
+    'Open Cretan Sea must NOT hit unbounded sphere',
+  );
+});
 

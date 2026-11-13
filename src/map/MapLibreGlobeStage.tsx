@@ -48,6 +48,11 @@ import {
 } from '../utils/pixelLayers';
 import { useOsmResolvedTerritories } from '../services/osmBoundaryService';
 import {
+  computeUnboundedPolityField,
+  hitTestUnboundedPolityAtLngLat,
+  isUnboundedPolity,
+} from '../utils/unboundedPolityField';
+import {
   buildGlobeSkySpec,
   buildOfflineDarkMatterStyle,
   preloadCartoDarkMatterStyle,
@@ -138,6 +143,8 @@ const EMPTY_FC = {
   features: [] as any[],
 };
 
+const EMPTY_SPECIES_LIST: SpeciesDiscovery[] = [];
+
 export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
   language,
   currentYear,
@@ -177,13 +184,22 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
   const hasSpeciesLayer = activeLayers.includes('species_discovery');
   const hasSpaceLayer = activeLayers.includes('space_race');
 
-  const activePolities: PolityPhase[] = useMemo(
-    () => getActivePolityPhases(currentYear),
-    [currentYear],
-  );
+  const prevPolitiesRef = useRef<{ sig: string; list: PolityPhase[] }>({ sig: '', list: [] });
+  const activePolities: PolityPhase[] = useMemo(() => {
+    const next = getActivePolityPhases(currentYear);
+    const sig = next.map((p) => p.id).join(',');
+    if (sig === prevPolitiesRef.current.sig) {
+      return prevPolitiesRef.current.list;
+    }
+    prevPolitiesRef.current = { sig, list: next };
+    return next;
+  }, [currentYear]);
   const { activeTerritories, loadingSnapshot } = useOsmResolvedTerritories(currentYear);
   const activeSpecies = useMemo(
-    () => (hasSpeciesLayer ? getActiveSpeciesDiscoveries(currentYear, selectedRange) : []),
+    () =>
+      hasSpeciesLayer
+        ? getActiveSpeciesDiscoveries(currentYear, selectedRange)
+        : EMPTY_SPECIES_LIST,
     [currentYear, selectedRange, hasSpeciesLayer],
   );
 
@@ -250,6 +266,14 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     let mortalityEnvInitialized = false;
     let prevSyncedYear: number | null = null;
     const lastPaintCache = new Map<string, number | string>();
+    let lastThemeNight: boolean | null = null;
+    let lastDemarcatedSig = '__init__';
+    let lastUnboundedSig = '__init__';
+    let lastSelectedRegionSig = '__init__';
+    let lastFlagOverlaySig = '';
+    let lastHoverCoordSig = '';
+    let lastCursorQueryMs = 0;
+    let lastCursorStyle = '';
 
     // Wall-clock C² quintic GPU cross-fade state (0.0 -> 1.0 over 280ms; 0% idle CPU once settled)
     const layerFadeCurrent: Record<FadeableLayerKey, number> = {
@@ -325,22 +349,30 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       const center = map.getCenter();
 
       if (polList.length > 0) {
-        setFlagOverlays(
-          polList.map((pol) => {
-            const [lon, lat] = pol.capitalCoords;
-            const visible =
-              proj === '2d' || isFrontHemisphere(lon, lat, center.lng, center.lat);
-            const pt = map.project([lon, lat]);
-            return {
-              polity: pol,
-              x: pt.x,
-              y: pt.y,
-              visible:
-                visible && pt.x >= -60 && pt.x <= w + 60 && pt.y >= -60 && pt.y <= h + 60,
-            };
-          }),
-        );
-      } else {
+        const nextFlags = polList.map((pol) => {
+          const [lon, lat] = pol.capitalCoords;
+          const visible =
+            proj === '2d' || isFrontHemisphere(lon, lat, center.lng, center.lat);
+          const pt = map.project([lon, lat]);
+          const rx = Math.round(pt.x * 2) * 0.5;
+          const ry = Math.round(pt.y * 2) * 0.5;
+          return {
+            polity: pol,
+            x: rx,
+            y: ry,
+            visible:
+              visible && rx >= -60 && rx <= w + 60 && ry >= -60 && ry <= h + 60,
+          };
+        });
+        const sig = nextFlags
+          .map((f) => `${f.polity.id}:${f.x}:${f.y}:${f.visible ? 1 : 0}`)
+          .join('|');
+        if (sig !== lastFlagOverlaySig) {
+          lastFlagOverlaySig = sig;
+          setFlagOverlays(nextFlags);
+        }
+      } else if (lastFlagOverlaySig !== 'empty') {
+        lastFlagOverlaySig = 'empty';
         setFlagOverlays([]);
       }
 
@@ -383,51 +415,51 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
 
         setSpeciesBubbles(raw);
       } else {
-        setSpeciesBubbles([]);
+        setSpeciesBubbles((prev) => (prev.length === 0 ? prev : []));
       }
     }
 
     function syncThemePaint() {
       if (!layersReadyRef.current || cancelled) return;
       const isNight = latestRef.current.activeLayers.includes('night_lights');
+      if (lastThemeNight === isNight) return;
+      lastThemeNight = isNight;
+
       const landColor = isNight ? '#0b0e15' : '#181d27';
       const landCoverColor = isNight ? '#0d111a' : '#1c222e';
       const waterColor = isNight ? '#04060b' : '#090d16';
       const riverColor = isNight ? '#0e1726' : '#162233';
       const coastlineColor = isNight ? '#1b2638' : '#2a364b';
 
-      const styleLayers = map.getStyle()?.layers || [];
-      const existingIds = new Set(styleLayers.map((l) => l.id));
-
-      if (existingIds.has('background')) {
+      if (map.getLayer('background')) {
         map.setPaintProperty('background', 'background-color', landColor);
       }
-      if (existingIds.has('ne-ocean-base')) {
+      if (map.getLayer('ne-ocean-base')) {
         map.setPaintProperty('ne-ocean-base', 'background-color', waterColor);
       }
-      if (existingIds.has('ne-land-fill-underlay')) {
+      if (map.getLayer('ne-land-fill-underlay')) {
         map.setPaintProperty('ne-land-fill-underlay', 'fill-color', landColor);
       }
-      if (existingIds.has('ne-land-coast-underlay')) {
+      if (map.getLayer('ne-land-coast-underlay')) {
         map.setPaintProperty('ne-land-coast-underlay', 'line-color', coastlineColor);
       }
-      if (existingIds.has('water')) {
+      if (map.getLayer('water')) {
         map.setPaintProperty('water', 'fill-color', waterColor);
         map.setPaintProperty('water', 'fill-opacity', 0.9995);
       }
-      if (existingIds.has('waterway')) {
+      if (map.getLayer('waterway')) {
         map.setPaintProperty('waterway', 'line-color', riverColor);
       }
-      if (existingIds.has('carto-water-coastline-crisp')) {
+      if (map.getLayer('carto-water-coastline-crisp')) {
         map.setPaintProperty('carto-water-coastline-crisp', 'line-color', coastlineColor);
       }
       for (const lid of baseLayerIdsRef.current.landuseIds) {
-        if (existingIds.has(lid)) {
+        if (map.getLayer(lid)) {
           map.setPaintProperty(lid, 'fill-color', landCoverColor);
         }
       }
       for (const sid of baseLayerIdsRef.current.symbolIds) {
-        if (existingIds.has(sid)) {
+        if (map.getLayer(sid)) {
           map.setPaintProperty(
             sid,
             'text-color',
@@ -674,61 +706,159 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         }
       }
 
-      // 1. Always-present Geopolitical Borders & Representative Color Choropleth (clipped 100% by HD CARTO `water`)
+      // 1. Geopolitical Rendering:
+      //    - Demarcated states (`boundaryMode !== 'unbounded'`): Sovereign Choropleth + Surveyed Outer Borders
+      //    - Unbounded ancient civilizations (`boundaryMode === 'unbounded'`): Core Zone (0.60–0.85 + Soft Edge)
+      //      + Wider Influence Zone (0.20–0.40) + Smooth Gradient Falloff to Terra Nullius (Alpha -> 0),
+      //      strictly clipped inside continental/island coastlines beneath CARTO `water`.
       const politySrc = map.getSource('polity-source') as maplibregl.GeoJSONSource | undefined;
       const polityBoundarySrc = map.getSource('polity-boundary-source') as
         | maplibregl.GeoJSONSource
         | undefined;
-      if (politySrc && polityBoundarySrc) {
-        if (polList.length > 0 && territories.length > 0) {
-          politySrc.setData({
-            type: 'FeatureCollection',
-            features: territories.map((t) => {
-              const owner = resolvePolityForTerritory(t, polList) ?? polList[0];
-              const baseOpacity =
-                t.tier === 'metropolis' ? 0.62 : t.tier === 'cleruchy' ? 0.54 : 0.45;
-              const effectiveOpacity = isThermalOverlay
-                ? +(baseOpacity * 0.26).toFixed(3)
-                : hasNight
-                  ? +(baseOpacity * 0.34).toFixed(3)
-                  : baseOpacity;
-              return {
-                type: 'Feature',
-                properties: {
-                  id: t.id,
-                  polityId: owner.id,
-                  nameZh: t.nameZh,
-                  tier: t.tier,
-                  fillColor: owner.representativeColor,
-                  borderColor: owner.borderColor,
-                  fillOpacity: effectiveOpacity,
-                },
-                geometry: t.geometry as any,
-              };
-            }),
-          });
+      const unboundedGlazeSrc = map.getSource('unbounded-glaze-source') as
+        | maplibregl.GeoJSONSource
+        | undefined;
+      const unboundedFieldSrc = map.getSource('unbounded-field-source') as
+        | maplibregl.GeoJSONSource
+        | undefined;
 
-          polityBoundarySrc.setData({
-            type: 'FeatureCollection',
-            features: territories.map((t) => {
-              const owner = resolvePolityForTerritory(t, polList) ?? polList[0];
-              return {
-                type: 'Feature',
-                properties: {
-                  id: t.id,
-                  polityId: owner.id,
-                  nameZh: t.nameZh,
-                  isCore: t.tier !== 'allied_tribute',
-                  fillColor: owner.representativeColor,
-                  borderColor: owner.borderColor,
-                },
-                geometry: t.outerBoundary as any,
-              };
-            }),
-          });
-        } else {
-          politySrc.setData(EMPTY_FC);
-          polityBoundarySrc.setData(EMPTY_FC);
+      if (politySrc && polityBoundarySrc) {
+        const demarcatedPolities = polList.filter((p) => !isUnboundedPolity(p));
+        const demarcatedTerritories =
+          demarcatedPolities.length > 0
+            ? territories.filter((t) => {
+                const owner = resolvePolityForTerritory(t, polList) ?? polList[0];
+                return !isUnboundedPolity(owner);
+              })
+            : [];
+
+        const demarcatedOpacityMode = isThermalOverlay ? 'thermal' : hasNight ? 'night' : 'day';
+        const demarcatedSig =
+          demarcatedPolities.length > 0 && demarcatedTerritories.length > 0
+            ? `${demarcatedPolities.map((p) => `${p.id}:${p.representativeColor}:${p.borderColor}`).join(',')}|${demarcatedTerritories.map((t) => t.id).join(',')}|${demarcatedOpacityMode}`
+            : 'empty';
+
+        if (demarcatedSig !== lastDemarcatedSig) {
+          lastDemarcatedSig = demarcatedSig;
+          const hasDemarcated = demarcatedSig !== 'empty';
+          setVisIfChanged('polity-fill', hasDemarcated);
+          setVisIfChanged('polity-inner-ribbon', hasDemarcated);
+          setVisIfChanged('polity-casing', hasDemarcated);
+          setVisIfChanged('polity-stroke', hasDemarcated);
+
+          if (hasDemarcated) {
+            politySrc.setData({
+              type: 'FeatureCollection',
+              features: demarcatedTerritories.map((t) => {
+                const owner = resolvePolityForTerritory(t, polList) ?? polList[0];
+                const baseOpacity =
+                  t.tier === 'metropolis' ? 0.62 : t.tier === 'cleruchy' ? 0.54 : 0.45;
+                const effectiveOpacity = isThermalOverlay
+                  ? +(baseOpacity * 0.26).toFixed(3)
+                  : hasNight
+                    ? +(baseOpacity * 0.34).toFixed(3)
+                    : baseOpacity;
+                return {
+                  type: 'Feature',
+                  properties: {
+                    id: t.id,
+                    polityId: owner.id,
+                    nameZh: t.nameZh,
+                    tier: t.tier,
+                    fillColor: owner.representativeColor,
+                    borderColor: owner.borderColor,
+                    fillOpacity: effectiveOpacity,
+                  },
+                  geometry: t.geometry as any,
+                };
+              }),
+            });
+
+            polityBoundarySrc.setData({
+              type: 'FeatureCollection',
+              features: demarcatedTerritories.map((t) => {
+                const owner = resolvePolityForTerritory(t, polList) ?? polList[0];
+                return {
+                  type: 'Feature',
+                  properties: {
+                    id: t.id,
+                    polityId: owner.id,
+                    nameZh: t.nameZh,
+                    isCore: t.tier !== 'allied_tribute',
+                    fillColor: owner.representativeColor,
+                    borderColor: owner.borderColor,
+                  },
+                  geometry: t.outerBoundary as any,
+                };
+              }),
+            });
+          } else {
+            politySrc.setData(EMPTY_FC);
+            polityBoundarySrc.setData(EMPTY_FC);
+          }
+        }
+
+        if (unboundedGlazeSrc && unboundedFieldSrc) {
+          const unboundedPolities = polList.filter((p) => isUnboundedPolity(p));
+          const unboundedScale = isThermalOverlay ? 0.34 : hasNight ? 0.46 : 1.0;
+          const unboundedSig =
+            unboundedPolities.length > 0
+              ? `${unboundedPolities.map((p) => `${p.id}:${p.representativeColor}`).join(',')}|${territories.map((t) => t.id).join(',')}|${unboundedScale}`
+              : 'empty';
+
+          if (unboundedSig !== lastUnboundedSig) {
+            lastUnboundedSig = unboundedSig;
+            if (unboundedPolities.length > 0) {
+              const field = computeUnboundedPolityField(polList, territories, {
+                opacityScale: unboundedScale,
+              });
+
+              setVisIfChanged('unbounded-influence-glaze', field.glazeParcels.length > 0);
+              setVisIfChanged('unbounded-core-glaze', field.glazeParcels.length > 0);
+              setVisIfChanged('unbounded-sphere-fill', field.shells.length > 0);
+
+              unboundedGlazeSrc.setData({
+                type: 'FeatureCollection',
+                features: field.glazeParcels.map((g) => ({
+                  type: 'Feature',
+                  properties: {
+                    id: g.id,
+                    polityId: g.polityId,
+                    nameZh: g.nameZh,
+                    tier: g.tier,
+                    isCoreZone: g.isCoreZone,
+                    fillColor: g.fillColor,
+                    fillOpacity: g.fillOpacity,
+                  },
+                  geometry: g.geometry as any,
+                })),
+              });
+
+              unboundedFieldSrc.setData({
+                type: 'FeatureCollection',
+                features: field.shells.map((sh) => ({
+                  type: 'Feature',
+                  properties: {
+                    id: sh.id,
+                    polityId: sh.polityId,
+                    tier: sh.tier,
+                    color: sh.color,
+                    fillOpacity: sh.fillOpacity,
+                  },
+                  geometry: {
+                    type: 'Polygon',
+                    coordinates: [sh.ring],
+                  },
+                })),
+              });
+            } else {
+              setVisIfChanged('unbounded-influence-glaze', false);
+              setVisIfChanged('unbounded-core-glaze', false);
+              setVisIfChanged('unbounded-sphere-fill', false);
+              unboundedGlazeSrc.setData(EMPTY_FC);
+              unboundedFieldSrc.setData(EMPTY_FC);
+            }
+          }
         }
 
         // Notify entry boot sequence once fine-grained OSM parcel geometries are pushed & rendered on the WebGL globe
@@ -972,42 +1102,73 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         | undefined;
       const selReg = latestRef.current.selectedRegion;
       if (selSrc) {
-        if (!selReg) {
-          selSrc.setData(EMPTY_FC);
-        } else if (selReg.kind === 'territory') {
-          const liveTerr = territories.find((t) => t.id === selReg.territoryId);
-          if (liveTerr) {
-            selSrc.setData({
-              type: 'FeatureCollection',
-              features: [
-                {
-                  type: 'Feature',
-                  properties: { kind: 'territory' },
-                  geometry: liveTerr.geometry as any,
-                },
-              ],
-            });
-          } else if (selReg.polygonRings && selReg.polygonRings.length > 0) {
-            selSrc.setData({
-              type: 'FeatureCollection',
-              features: [
-                {
-                  type: 'Feature',
-                  properties: { kind: 'territory' },
-                  geometry: {
-                    type: 'MultiPolygon',
-                    coordinates: selReg.polygonRings.map((r) => [r]),
+        const liveTerrForSel =
+          selReg?.kind === 'territory'
+            ? territories.find((t) => t.id === selReg.territoryId)
+            : undefined;
+        const selSig = !selReg
+          ? 'none'
+          : selReg.kind === 'territory'
+            ? `terr:${selReg.territoryId}:${liveTerrForSel ? 'live' : 'fallback'}`
+            : selReg.kind === 'bbox'
+              ? `bbox:${selReg.bbox.minLon},${selReg.bbox.minLat},${selReg.bbox.maxLon},${selReg.bbox.maxLat}`
+              : `circle:${selReg.center[0]},${selReg.center[1]},${selReg.radiusKm}`;
+
+        if (selSig !== lastSelectedRegionSig) {
+          lastSelectedRegionSig = selSig;
+          setVisIfChanged('selected-region-fill', Boolean(selReg));
+          setVisIfChanged('selected-region-stroke', Boolean(selReg));
+
+          if (!selReg) {
+            selSrc.setData(EMPTY_FC);
+          } else if (selReg.kind === 'territory') {
+            if (liveTerrForSel) {
+              selSrc.setData({
+                type: 'FeatureCollection',
+                features: [
+                  {
+                    type: 'Feature',
+                    properties: { kind: 'territory' },
+                    geometry: liveTerrForSel.geometry as any,
                   },
-                },
-              ],
-            });
-          } else {
+                ],
+              });
+            } else if (selReg.polygonRings && selReg.polygonRings.length > 0) {
+              selSrc.setData({
+                type: 'FeatureCollection',
+                features: [
+                  {
+                    type: 'Feature',
+                    properties: { kind: 'territory' },
+                    geometry: {
+                      type: 'MultiPolygon',
+                      coordinates: selReg.polygonRings.map((r) => [r]),
+                    },
+                  },
+                ],
+              });
+            } else {
+              selSrc.setData({
+                type: 'FeatureCollection',
+                features: [
+                  {
+                    type: 'Feature',
+                    properties: { kind: 'territory' },
+                    geometry: {
+                      type: 'Polygon',
+                      coordinates: [bboxToPolygonRing(selReg.bbox)],
+                    },
+                  },
+                ],
+              });
+            }
+          } else if (selReg.kind === 'bbox') {
             selSrc.setData({
               type: 'FeatureCollection',
               features: [
                 {
                   type: 'Feature',
-                  properties: { kind: 'territory' },
+                  properties: { kind: 'bbox' },
                   geometry: {
                     type: 'Polygon',
                     coordinates: [bboxToPolygonRing(selReg.bbox)],
@@ -1015,35 +1176,21 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
                 },
               ],
             });
+          } else if (selReg.kind === 'circle') {
+            selSrc.setData({
+              type: 'FeatureCollection',
+              features: [
+                {
+                  type: 'Feature',
+                  properties: { kind: 'circle' },
+                  geometry: {
+                    type: 'Polygon',
+                    coordinates: [createGeodesicCircleRing(selReg.center, selReg.radiusKm, 72)],
+                  },
+                },
+              ],
+            });
           }
-        } else if (selReg.kind === 'bbox') {
-          selSrc.setData({
-            type: 'FeatureCollection',
-            features: [
-              {
-                type: 'Feature',
-                properties: { kind: 'bbox' },
-                geometry: {
-                  type: 'Polygon',
-                  coordinates: [bboxToPolygonRing(selReg.bbox)],
-                },
-              },
-            ],
-          });
-        } else if (selReg.kind === 'circle') {
-          selSrc.setData({
-            type: 'FeatureCollection',
-            features: [
-              {
-                type: 'Feature',
-                properties: { kind: 'circle' },
-                geometry: {
-                  type: 'Polygon',
-                  coordinates: [createGeodesicCircleRing(selReg.center, selReg.radiusKm, 72)],
-                },
-              },
-            ],
-          });
         }
       }
 
@@ -1055,6 +1202,10 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     function registerOverlaySourcesAndLayers() {
       if (cancelled) return;
       lastPaintCache.clear();
+      lastThemeNight = null;
+      lastDemarcatedSig = '__init__';
+      lastUnboundedSig = '__init__';
+      lastSelectedRegionSig = '__init__';
       mortalityEnvInitialized = false;
 
       const currentLayers = map.getStyle()?.layers || [];
@@ -1073,16 +1224,18 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       }
 
       const precisionSources: Array<{ name: string; tolerance: number }> = [
-        { name: 'polity-source', tolerance: 0.12 },
-        { name: 'polity-boundary-source', tolerance: 0.12 },
+        { name: 'polity-source', tolerance: 0.035 },
+        { name: 'polity-boundary-source', tolerance: 0.035 },
+        { name: 'unbounded-glaze-source', tolerance: 0.05 },
+        { name: 'unbounded-field-source', tolerance: 0.04 },
         { name: 'pop-thermal-source', tolerance: 0.15 },
         { name: 'night-thermal-source', tolerance: 0.15 },
         { name: 'night-lights-source', tolerance: 0.35 },
-        { name: 'routes-source', tolerance: 0.08 },
+        { name: 'routes-source', tolerance: 0.06 },
         { name: 'mortality-thermal-source', tolerance: 0.15 },
         { name: 'mortality-epicenters-source', tolerance: 0.25 },
         { name: 'species-points-source', tolerance: 0.25 },
-        { name: 'selected-region-source', tolerance: 0.08 },
+        { name: 'selected-region-source', tolerance: 0.035 },
       ];
       for (const { name, tolerance } of precisionSources) {
         if (!map.getSource(name)) {
@@ -1096,13 +1249,70 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       }
 
       // CRITICAL CARTOGRAPHIC COMPOSITING:
-      // Insert ALL Polity Fills, Polity Border Bands, Population Thermal Heatmap, Nighttime Radiance Heatmap,
-      // and Mortality Infrared Heatmap strictly BENEATH CARTO's `#090d16` / `#04060b` OpenStreetMap `water` vector layer!
+      // Insert ALL Demarcated Polity Fills/Borders, Unbounded Ancient Civilization Spheres, Population Thermal Heatmap,
+      // Nighttime Radiance Heatmap, and Mortality Infrared Heatmap strictly BENEATH CARTO's `#090d16` / `#04060b`
+      // OpenStreetMap `water` vector layer so 0% of any polygon or radial gradient overflows into oceans!
       const firstSymbolId = currentLayers.find((l) => l.type === 'symbol')?.id;
       const waterLayerId = currentLayers.find((l) => l.id === 'water')?.id;
       const beforeWaterOrSymbol = waterLayerId || firstSymbolId;
 
-      // 1A. Seam-free Sovereign / Allied Choropleth Glaze (clipped 100% by `water`)
+      // 0A–0C. Draped Unbounded Ancient Civilization Sphere-of-Influence Stack
+      //        (Concentric organic polygon shells + subtle land parcel glaze rasterized once into
+      //        draped globe tiles strictly beneath CARTO `water` — 0% ocean bleed, 0 extra per-frame GPU passes)
+      if (!map.getLayer('unbounded-influence-glaze')) {
+        map.addLayer(
+          {
+            id: 'unbounded-influence-glaze',
+            type: 'fill',
+            source: 'unbounded-glaze-source',
+            filter: ['==', ['get', 'isCoreZone'], false],
+            layout: { visibility: 'none' },
+            paint: {
+              'fill-antialias': true,
+              'fill-color': ['get', 'fillColor'],
+              'fill-opacity': ['get', 'fillOpacity'],
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      if (!map.getLayer('unbounded-core-glaze')) {
+        map.addLayer(
+          {
+            id: 'unbounded-core-glaze',
+            type: 'fill',
+            source: 'unbounded-glaze-source',
+            filter: ['==', ['get', 'isCoreZone'], true],
+            layout: { visibility: 'none' },
+            paint: {
+              'fill-antialias': true,
+              'fill-color': ['get', 'fillColor'],
+              'fill-opacity': ['get', 'fillOpacity'],
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      if (!map.getLayer('unbounded-sphere-fill')) {
+        map.addLayer(
+          {
+            id: 'unbounded-sphere-fill',
+            type: 'fill',
+            source: 'unbounded-field-source',
+            layout: { visibility: 'none' },
+            paint: {
+              'fill-antialias': false,
+              'fill-color': ['get', 'color'],
+              'fill-opacity': ['get', 'fillOpacity'],
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      // 1A. Seam-free Demarcated Sovereign / Allied Choropleth Glaze (clipped 100% by `water`)
       if (!map.getLayer('polity-fill')) {
         map.addLayer(
           {
@@ -1319,7 +1529,7 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         );
       }
 
-      // 1B. Engraved Atlas Inner Coastal & Frontier Ribbon (strictly beneath `water` so sea half is 100% clipped)
+      // 1B. Engraved Atlas Inner Coastal & Frontier Ribbon (round caps/joins + soft blur — zero miter spikes)
       if (!map.getLayer('polity-inner-ribbon')) {
         map.addLayer(
           {
@@ -1327,12 +1537,13 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
             type: 'line',
             source: 'polity-boundary-source',
             layout: {
-              'line-cap': 'butt',
-              'line-join': 'miter',
+              'line-cap': 'round',
+              'line-join': 'round',
             },
             paint: {
               'line-color': ['get', 'borderColor'],
               'line-width': ['interpolate', ['linear'], ['zoom'], 2, 4.4, 6, 8.2, 10, 12.5],
+              'line-blur': 1.5,
               'line-opacity': 0.28,
             },
           },
@@ -1340,7 +1551,7 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         );
       }
 
-      // 1C. Dark Cartographic Frontier Casing (strictly beneath `water`)
+      // 1C. Dark Cartographic Frontier Casing (round caps/joins + anti-alias blur strictly beneath `water`)
       if (!map.getLayer('polity-casing')) {
         map.addLayer(
           {
@@ -1348,12 +1559,13 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
             type: 'line',
             source: 'polity-boundary-source',
             layout: {
-              'line-cap': 'butt',
-              'line-join': 'miter',
+              'line-cap': 'round',
+              'line-join': 'round',
             },
             paint: {
               'line-color': 'rgba(6, 9, 15, 0.88)',
               'line-width': ['interpolate', ['linear'], ['zoom'], 2, 3.0, 6, 4.8, 10, 6.8],
+              'line-blur': 0.55,
               'line-opacity': 0.90,
             },
           },
@@ -1361,7 +1573,7 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         );
       }
 
-      // 1D. Precision Surveyed Outer Frontier & Coastline Rim (strictly beneath `water` — zero sea overflow)
+      // 1D. Precision Surveyed Outer Frontier & Coastline Rim (round caps/joins + anti-alias blur — burr-free)
       if (!map.getLayer('polity-stroke')) {
         map.addLayer(
           {
@@ -1369,8 +1581,8 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
             type: 'line',
             source: 'polity-boundary-source',
             layout: {
-              'line-cap': 'butt',
-              'line-join': 'miter',
+              'line-cap': 'round',
+              'line-join': 'round',
             },
             paint: {
               'line-color': ['get', 'borderColor'],
@@ -1379,12 +1591,13 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
                 ['linear'],
                 ['zoom'],
                 2,
-                ['case', ['get', 'isCore'], 2.6, 2.0],
+                ['case', ['get', 'isCore'], 2.5, 1.95],
                 6,
-                ['case', ['get', 'isCore'], 4.0, 3.1],
+                ['case', ['get', 'isCore'], 3.85, 3.0],
                 10,
-                ['case', ['get', 'isCore'], 5.4, 4.2],
+                ['case', ['get', 'isCore'], 5.2, 4.05],
               ],
+              'line-blur': 0.42,
               'line-opacity': 0.96,
             },
           },
@@ -1594,27 +1807,68 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     map.on('resize', scheduleOverlaySync);
 
     map.on('mousemove', (e) => {
-      cancelAnimationFrame(hoverRaf);
       const lng = e.lngLat.lng;
       const lat = e.lngLat.lat;
+      const px = e.point.x;
+      const py = e.point.y;
+
+      if (hoverRaf) return;
       hoverRaf = requestAnimationFrame(() => {
-        latestRef.current.onHoverCoordsChange?.([lng, lat]);
+        hoverRaf = 0;
+        if (cancelled) return;
+
+        const qLng = Math.round(lng * 100) / 100;
+        const qLat = Math.round(lat * 100) / 100;
+        const coordSig = `${qLng},${qLat}`;
+        if (coordSig !== lastHoverCoordSig) {
+          lastHoverCoordSig = coordSig;
+          latestRef.current.onHoverCoordsChange?.([qLng, qLat]);
+        }
+
+        if (!layersReadyRef.current || map.isMoving()) return;
+        const now = performance.now();
+        if (now - lastCursorQueryMs < 55) return;
+        lastCursorQueryMs = now;
+
+        const {
+          activeLayers: layers,
+          activePolities: polList,
+          activeTerritories: terrs,
+        } = latestRef.current;
+
+        const candidateLayers: string[] = [];
+        if (layers.includes('transport_routes')) candidateLayers.push('routes-core');
+        if (layers.includes('mortality_catastrophe'))
+          candidateLayers.push('mortality-epicenter-ring');
+        if (layers.includes('species_discovery')) candidateLayers.push('species-points-layer');
+        if (polList.some((p) => !isUnboundedPolity(p))) {
+          candidateLayers.push('polity-fill');
+        }
+        if (polList.some((p) => isUnboundedPolity(p)) && terrs.length > 0) {
+          candidateLayers.push('unbounded-core-glaze', 'unbounded-influence-glaze');
+        }
+
+        const hitLayers = candidateLayers.filter(
+          (id) => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none',
+        );
+        let isInteractive = false;
+        if (hitLayers.length > 0) {
+          isInteractive = map.queryRenderedFeatures([px, py], { layers: hitLayers }).length > 0;
+        }
+        if (!isInteractive && polList.some((p) => isUnboundedPolity(p))) {
+          isInteractive = Boolean(hitTestUnboundedPolityAtLngLat(lng, lat, polList, terrs));
+        }
+
+        const nextCursor = isInteractive ? 'pointer' : '';
+        if (nextCursor !== lastCursorStyle) {
+          lastCursorStyle = nextCursor;
+          map.getCanvas().style.cursor = nextCursor;
+        }
       });
-
-      if (!layersReadyRef.current) return;
-      const layers = latestRef.current.activeLayers;
-      const candidateLayers: string[] = [];
-      if (layers.includes('transport_routes')) candidateLayers.push('routes-core');
-      if (layers.includes('mortality_catastrophe')) candidateLayers.push('mortality-epicenter-ring');
-      if (layers.includes('species_discovery')) candidateLayers.push('species-points-layer');
-      candidateLayers.push('polity-fill');
-
-      const hitLayers = candidateLayers.filter((id) => map.getLayer(id));
-      const features = map.queryRenderedFeatures(e.point, { layers: hitLayers });
-      map.getCanvas().style.cursor = features.length > 0 ? 'pointer' : '';
     });
 
     map.on('mouseout', () => {
+      lastHoverCoordSig = '';
       latestRef.current.onHoverCoordsChange?.(null);
     });
 
@@ -1696,24 +1950,55 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         }
       }
 
-      // Priority 4: Geopolitical territory polygon click -> open selected element overview popover (never auto-box-select)
-      if (polList.length > 0 && terrs.length > 0 && map.getLayer('polity-fill')) {
-        const polHits = map.queryRenderedFeatures(e.point, { layers: ['polity-fill'] });
-        if (polHits.length > 0) {
-          const clickedId = polHits[0].properties?.id;
-          const hitTerr = terrs.find((t) => t.id === clickedId) || terrs[0];
-          const ownerPol =
-            (hitTerr ? resolvePolityForTerritory(hitTerr, polList) : null) || polList[0];
+      // Priority 4: Geopolitical territory polygon or unbounded ancient sphere click -> open selected element overview popover
+      const geoClickLayers = [
+        'polity-fill',
+        'unbounded-core-glaze',
+        'unbounded-influence-glaze',
+      ].filter((id) => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none');
+
+      if (polList.length > 0) {
+        if (geoClickLayers.length > 0) {
+          const polHits = map.queryRenderedFeatures(e.point, { layers: geoClickLayers });
+          if (polHits.length > 0) {
+            const hitProps = polHits[0].properties || {};
+            const clickedId = hitProps.id;
+            const clickedPolityId = hitProps.polityId;
+            const hitTerr = terrs.find((t) => t.id === clickedId);
+            const ownerPol =
+              polList.find((p) => p.id === clickedPolityId) ||
+              (hitTerr ? resolvePolityForTerritory(hitTerr, polList) : null) ||
+              polList[0];
+            const ownerCount = terrs.filter(
+              (t) => (resolvePolityForTerritory(t, polList) ?? polList[0]).id === ownerPol.id,
+            ).length;
+            latestRef.current.onSelectEntity({
+              kind: 'polity',
+              phase: ownerPol,
+              regionCount: ownerCount,
+              clickedTerritoryId: hitTerr?.id,
+              clickedTerritoryNameZh: hitTerr?.nameZh,
+              clickedTerritoryTier: hitTerr?.tier,
+            });
+            return;
+          }
+        }
+
+        // Mathematical hit-test for continental Influence Zone outside discrete glaze parcels (e.g. Thessaly / Western Anatolia)
+        const hitUnboundedPol = hitTestUnboundedPolityAtLngLat(
+          e.lngLat.lng,
+          e.lngLat.lat,
+          polList,
+          terrs,
+        );
+        if (hitUnboundedPol) {
           const ownerCount = terrs.filter(
-            (t) => (resolvePolityForTerritory(t, polList) ?? polList[0]).id === ownerPol.id,
+            (t) => (resolvePolityForTerritory(t, polList) ?? polList[0]).id === hitUnboundedPol.id,
           ).length;
           latestRef.current.onSelectEntity({
             kind: 'polity',
-            phase: ownerPol,
+            phase: hitUnboundedPol,
             regionCount: ownerCount,
-            clickedTerritoryId: hitTerr?.id,
-            clickedTerritoryNameZh: hitTerr?.nameZh,
-            clickedTerritoryTier: hitTerr?.tier,
           });
           return;
         }

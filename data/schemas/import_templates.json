@@ -88,6 +88,7 @@
       "endYear": 0,
       "representativeColor": "#1D4ED8",
       "borderColor": "#60A5FA",
+      "boundaryMode": "demarcated",
       "flagId": "imperial_athens",
       "flagSvg": "",
       "flagAsset": "",

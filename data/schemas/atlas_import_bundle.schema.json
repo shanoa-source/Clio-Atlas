@@ -181,6 +181,21 @@
         "endYear": { "type": "integer" },
         "representativeColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
         "borderColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "boundaryMode": {
+          "type": "string",
+          "enum": ["demarcated", "unbounded"],
+          "description": "Defaults to 'demarcated' for states with defined borders. Set to 'unbounded' strictly for ancient borderless civilizations/forces to render Core Zone + Influence Zone + smooth gradient falloff to Terra Nullius."
+        },
+        "coreZones": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ThermalSubZone" },
+          "description": "Optional Core Administrative & Settlement Zone lobes for 'unbounded' ancient civilizations."
+        },
+        "influenceZones": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ThermalSubZone" },
+          "description": "Optional Radiating Influence Zone lobes for 'unbounded' ancient civilizations."
+        },
         "flagId": {
           "type": "string",
           "enum": [

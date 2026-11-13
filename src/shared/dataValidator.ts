@@ -751,6 +751,25 @@ export function validateImportPayload(
         if (typeof raw.borderColor !== 'string' || !HEX_COLOR_RE.test(raw.borderColor)) {
           errors.push({ path: `${p}.borderColor`, message: 'Must be a #RRGGBB hex color.' });
         }
+
+        let boundaryMode: 'demarcated' | 'unbounded' | undefined;
+        if (raw.boundaryMode !== undefined) {
+          if (raw.boundaryMode !== 'demarcated' && raw.boundaryMode !== 'unbounded') {
+            errors.push({
+              path: `${p}.boundaryMode`,
+              message: 'boundaryMode must be either "demarcated" or "unbounded".',
+            });
+          } else {
+            boundaryMode = raw.boundaryMode;
+          }
+        }
+        const coreZones = validateThermalSubZones(raw.coreZones, `${p}.coreZones`, errors);
+        const influenceZones = validateThermalSubZones(
+          raw.influenceZones,
+          `${p}.influenceZones`,
+          errors,
+        );
+
         let flagId: FlagVariantId | undefined;
         let flagSvg: string | undefined;
         let flagAsset: string | undefined;
@@ -834,6 +853,9 @@ export function validateImportPayload(
             endYear: raw.endYear,
             representativeColor: raw.representativeColor,
             borderColor: raw.borderColor,
+            ...(boundaryMode ? { boundaryMode } : {}),
+            ...(coreZones ? { coreZones } : {}),
+            ...(influenceZones ? { influenceZones } : {}),
             ...(flagId ? { flagId } : {}),
             ...(flagSvg ? { flagSvg } : {}),
             ...(flagAsset ? { flagAsset } : {}),

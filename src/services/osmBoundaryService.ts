@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { geoArea } from 'd3-geo';
 import {
   computeDatasetYearBounds,
+  getPolityPhases,
   getTerritoryRegions,
   subscribeAtlasDataLayer,
 } from '../shared/atlasDataLayer';
@@ -28,8 +29,11 @@ export interface OsmLoadingSnapshot {
 }
 
 const osmGeometryCache = new Map<string, GeoJsonMultiPolygon>();
+const osmIndexedCache = new Map<string, IndexedPolygonRing[]>();
 const dissolvedBoundaryCache = new Map<string, GeoJsonMultiLineString>();
 const regionFeatureMemo = new Map<string, ResolvedTerritoryFeature>();
+let lastResolvedSig = '';
+let lastResolvedList: ResolvedTerritoryFeature[] = [];
 let inflightLoadPromise: Promise<void> | null = null;
 const subscribers = new Set<() => void>();
 
@@ -37,12 +41,12 @@ let currentLoadPhase: OsmLoadPhase = 'idle';
 let loadedFromLocalDb = false;
 let loadFinishedOnce = false;
 
-const IDB_NAME = 'civ_atlas_geodesic_cache_v3';
+const IDB_NAME = 'civ_atlas_geodesic_cache_v5';
 const IDB_STORE = 'snapshots';
 
 function computeIdbSignature(): string {
   const regions = getTerritoryRegions();
-  return `atlas_osm_v3_${regions.map((r) => `${r.id}:${r.osmIds.join('+')}`).join('|')}`;
+  return `atlas_osm_v5_${regions.map((r) => `${r.id}:${r.osmIds.join('+')}`).join('|')}`;
 }
 
 interface PersistedOsmSnapshot {
@@ -178,7 +182,7 @@ function isPointInsideCandidatePolygons(
 export function extractDissolvedOuterBoundary(
   multiPolygon: GeoJsonMultiPolygon,
 ): GeoJsonMultiLineString {
-  const fmt = (n: number) => n.toFixed(4);
+  const fmt = (n: number) => Math.round(n * 10000);
   const undirectedCounts = new Map<string, number>();
   const directedSegments: Array<{
     polyIdx: number;
@@ -257,10 +261,15 @@ export function extractDissolvedOuterBoundary(
     return true;
   });
 
+  const incomingByEnd = new Map<string, number[]>();
   exteriorSegs.forEach((seg, idx) => {
-    const bucket = outgoingByStart.get(seg.startKey);
-    if (bucket) bucket.push(idx);
+    const outBucket = outgoingByStart.get(seg.startKey);
+    if (outBucket) outBucket.push(idx);
     else outgoingByStart.set(seg.startKey, [idx]);
+
+    const inBucket = incomingByEnd.get(seg.endKey);
+    if (inBucket) inBucket.push(idx);
+    else incomingByEnd.set(seg.endKey, [idx]);
   });
 
   const visited = new Uint8Array(exteriorSegs.length);
@@ -269,7 +278,7 @@ export function extractDissolvedOuterBoundary(
   for (let i = 0; i < exteriorSegs.length; i++) {
     if (visited[i]) continue;
     visited[i] = 1;
-    const chain: [number, number][] = [exteriorSegs[i].a, exteriorSegs[i].b];
+    const forwardPts: [number, number][] = [exteriorSegs[i].a, exteriorSegs[i].b];
     let currEnd = exteriorSegs[i].endKey;
 
     while (true) {
@@ -278,10 +287,24 @@ export function extractDissolvedOuterBoundary(
       const nextIdx = candidates.find((c) => !visited[c]);
       if (nextIdx === undefined) break;
       visited[nextIdx] = 1;
-      chain.push(exteriorSegs[nextIdx].b);
+      forwardPts.push(exteriorSegs[nextIdx].b);
       currEnd = exteriorSegs[nextIdx].endKey;
     }
 
+    const backwardPts: [number, number][] = [];
+    let currStart = exteriorSegs[i].startKey;
+    while (currStart !== currEnd) {
+      const prevCandidates = incomingByEnd.get(currStart);
+      if (!prevCandidates) break;
+      const prevIdx = prevCandidates.find((c) => !visited[c]);
+      if (prevIdx === undefined) break;
+      visited[prevIdx] = 1;
+      backwardPts.push(exteriorSegs[prevIdx].a);
+      currStart = exteriorSegs[prevIdx].startKey;
+    }
+
+    const chain =
+      backwardPts.length > 0 ? [...backwardPts.reverse(), ...forwardPts] : forwardPts;
     if (chain.length >= 2) {
       lines.push(chain);
     }
@@ -290,6 +313,147 @@ export function extractDissolvedOuterBoundary(
   return {
     type: 'MultiLineString',
     coordinates: lines,
+  };
+}
+
+function stripAcuteMicroBurrs(
+  pts: [number, number][],
+  isClosed: boolean,
+): [number, number][] {
+  if (pts.length < 6) return pts;
+  const openPts = isClosed ? pts.slice(0, -1) : pts.slice();
+  if (openPts.length < 5) return pts;
+
+  const maxSpikeSegDeg = 0.0095; // ~1 km micro-burr threshold
+  const filtered: [number, number][] = [];
+  const n = openPts.length;
+
+  for (let i = 0; i < n; i++) {
+    if (!isClosed && (i === 0 || i === n - 1)) {
+      filtered.push(openPts[i]);
+      continue;
+    }
+    const prev = filtered.length > 0 ? filtered[filtered.length - 1] : openPts[(i - 1 + n) % n];
+    const curr = openPts[i];
+    const next = openPts[(i + 1) % n];
+
+    const dx1 = curr[0] - prev[0];
+    const dy1 = curr[1] - prev[1];
+    const dx2 = next[0] - curr[0];
+    const dy2 = next[1] - curr[1];
+    const len1 = Math.hypot(dx1, dy1);
+    const len2 = Math.hypot(dx2, dy2);
+
+    if (len1 < 1e-6) {
+      continue;
+    }
+    // Drop sub-kilometer hairpin spikes / jagged spurs where direction reverses sharply (> ~120° turn)
+    if (len1 < maxSpikeSegDeg && len2 < maxSpikeSegDeg && len2 > 1e-6) {
+      const cosTurn = (dx1 * dx2 + dy1 * dy2) / (len1 * len2);
+      if (cosTurn < -0.48) {
+        continue;
+      }
+    }
+    filtered.push(curr);
+  }
+
+  if (filtered.length < 3) return pts;
+  if (isClosed) {
+    return [...filtered, filtered[0]];
+  }
+  return filtered;
+}
+
+function chaikinClampPass(
+  pts: [number, number][],
+  isClosed: boolean,
+  maxDispDeg = 0.0018,
+  cosTurnThreshold = 0.96,
+  minSegDeg = 0.0018,
+): [number, number][] {
+  const openPts = isClosed ? pts.slice(0, -1) : pts;
+  const n = openPts.length;
+  if (n < 3) return pts;
+
+  const out: [number, number][] = [];
+  if (!isClosed) {
+    out.push(openPts[0]);
+  }
+
+  const limit = isClosed ? n : n - 1;
+  const start = isClosed ? 0 : 1;
+
+  for (let i = start; i < limit; i++) {
+    const prev = openPts[(i - 1 + n) % n];
+    const curr = openPts[i];
+    const next = openPts[(i + 1) % n];
+
+    const v1x = curr[0] - prev[0];
+    const v1y = curr[1] - prev[1];
+    const v2x = next[0] - curr[0];
+    const v2y = next[1] - curr[1];
+    const l1 = Math.hypot(v1x, v1y);
+    const l2 = Math.hypot(v2x, v2y);
+
+    if (l1 < 1e-6 || l2 < 1e-6 || (l1 < minSegDeg && l2 < minSegDeg)) {
+      out.push(curr);
+      continue;
+    }
+
+    const cosTurn = (v1x * v2x + v1y * v2y) / (l1 * l2);
+    // Straight, gentle, or already-dense segments need zero extra vertices
+    if (cosTurn > cosTurnThreshold) {
+      out.push(curr);
+      continue;
+    }
+
+    // Clamp corner-cut offset to <= `maxDispDeg` (~190m) so geography never drifts off coastlines
+    const t1 = Math.min(0.25, maxDispDeg / l1);
+    const t2 = Math.min(0.25, maxDispDeg / l2);
+    const q1: [number, number] = [
+      Math.round((curr[0] - v1x * t1) * 100000) * 0.00001,
+      Math.round((curr[1] - v1y * t1) * 100000) * 0.00001,
+    ];
+    const q2: [number, number] = [
+      Math.round((curr[0] + v2x * t2) * 100000) * 0.00001,
+      Math.round((curr[1] + v2y * t2) * 100000) * 0.00001,
+    ];
+    out.push(q1, q2);
+  }
+
+  if (!isClosed) {
+    out.push(openPts[n - 1]);
+  } else if (out.length > 0) {
+    out.push(out[0]);
+  }
+
+  return out;
+}
+
+/**
+ * Eliminates acute sub-kilometer coastal/frontier burrs ("毛刺") and rounds sharp polygonal
+ * corners via adaptive displacement-clamped Chaikin refinement while avoiding vertex bloat on dense islands.
+ */
+export function smoothBoundaryMultiLineString(
+  mls: GeoJsonMultiLineString,
+): GeoJsonMultiLineString {
+  const smoothedLines = mls.coordinates.map((line) => {
+    if (line.length < 6) return line;
+    const first = line[0];
+    const last = line[line.length - 1];
+    const isClosed =
+      Math.abs(first[0] - last[0]) < 1e-4 && Math.abs(first[1] - last[1]) < 1e-4;
+
+    const deburred = stripAcuteMicroBurrs(line, isClosed);
+    if (deburred.length < 6) return deburred;
+    const pass1 = chaikinClampPass(deburred, isClosed, 0.0018, 0.955, 0.0016);
+    // Second refinement targets only remaining sharp angles (> ~28° bend) to keep vertex counts lean
+    return chaikinClampPass(pass1, isClosed, 0.001, 0.88, 0.0022);
+  });
+
+  return {
+    type: 'MultiLineString',
+    coordinates: smoothedLines,
   };
 }
 
@@ -411,6 +575,23 @@ async function writeIdbSnapshot(snapshot: PersistedOsmSnapshot): Promise<void> {
   });
 }
 
+const EMPTY_MULTI_LINE: GeoJsonMultiLineString = {
+  type: 'MultiLineString',
+  coordinates: [],
+};
+
+function isTerritoryExclusivelyUnbounded(reg: TerritoryRegion): boolean {
+  const allPolities = getPolityPhases();
+  if (reg.polityId) {
+    const owner = allPolities.find((p) => p.id === reg.polityId);
+    if (owner) return owner.boundaryMode === 'unbounded';
+  }
+  const overlapping = allPolities.filter(
+    (p) => p.startYear <= reg.validTo && p.endYear >= reg.validFrom,
+  );
+  return overlapping.length > 0 && overlapping.every((p) => p.boundaryMode === 'unbounded');
+}
+
 function precomputeAllDissolvedRegions(): void {
   for (const reg of getTerritoryRegions()) {
     if (regionFeatureMemo.has(reg.id)) continue;
@@ -430,9 +611,12 @@ function precomputeAllDissolvedRegions(): void {
       type: 'MultiPolygon',
       coordinates: mergedPolygons,
     };
+    const unboundedOnly = isTerritoryExclusivelyUnbounded(reg);
     const cachedOuter = dissolvedBoundaryCache.get(reg.id);
-    const outerBoundary = cachedOuter ?? extractDissolvedOuterBoundary(geometry);
-    if (!cachedOuter) {
+    const outerBoundary = unboundedOnly
+      ? EMPTY_MULTI_LINE
+      : (cachedOuter ?? smoothBoundaryMultiLineString(extractDissolvedOuterBoundary(geometry)));
+    if (!unboundedOnly && !cachedOuter) {
       dissolvedBoundaryCache.set(reg.id, outerBoundary);
     }
 
@@ -467,11 +651,13 @@ async function fetchBatchFromProxy(chunk: string[]): Promise<boolean> {
         const normalized = normalizeOsmGeometryToMultiPolygon(geom);
         if (normalized) {
           osmGeometryCache.set(id, normalized);
+          osmIndexedCache.set(id, buildIndexedPolygons(normalized));
           added = true;
         }
       }
       if (added) {
         regionFeatureMemo.clear();
+        lastResolvedSig = '';
         notifySubscribers();
       }
       return true;
@@ -500,6 +686,7 @@ async function fetchOsmIdsFromApi(osmIds: string[]): Promise<void> {
     for (const [id, geom] of Object.entries(persisted.geometries)) {
       if (geom && geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
         osmGeometryCache.set(id, geom);
+        osmIndexedCache.set(id, buildIndexedPolygons(geom));
       }
     }
     for (const [regId, outer] of Object.entries(persisted.dissolvedBoundaries || {})) {
@@ -544,8 +731,10 @@ async function fetchOsmIdsFromApi(osmIds: string[]): Promise<void> {
         const parsed = parseNominatimGeoJsonFeatures(fc);
         parsed.forEach((geom, key) => {
           osmGeometryCache.set(key, geom);
+          osmIndexedCache.set(key, buildIndexedPolygons(geom));
         });
         regionFeatureMemo.clear();
+        lastResolvedSig = '';
         notifySubscribers();
       }
     }
@@ -606,27 +795,47 @@ if (typeof window !== 'undefined' && typeof fetch === 'function') {
 
 subscribeAtlasDataLayer(() => {
   regionFeatureMemo.clear();
+  lastResolvedSig = '';
   notifySubscribers();
   if (typeof window !== 'undefined' && typeof fetch === 'function') {
     void ensureOsmTerritoriesLoaded();
   }
 });
 
+const EMPTY_TERRITORIES: ResolvedTerritoryFeature[] = [];
+
 /**
  * Resolves active TerritoryRegions at `year` using cached high-precision OpenStreetMap geometries.
- * Dynamically derives active `[minYear, maxYear]` bounds from the unified data layer.
+ * Dynamically derives active `[minYear, maxYear]` bounds from the unified data layer and preserves
+ * reference stability (`===`) across consecutive years with identical active regions.
  */
 export function resolveActiveOsmTerritories(year: number): ResolvedTerritoryFeature[] {
   const yr = Math.round(year);
   const bounds = computeDatasetYearBounds();
   if (!bounds || yr < bounds.minYear || yr > bounds.maxYear) {
-    return [];
+    return EMPTY_TERRITORIES;
+  }
+
+  const allRegions = getTerritoryRegions();
+  const activeRegs: TerritoryRegion[] = [];
+  let sig = `${osmGeometryCache.size}:`;
+  for (let i = 0; i < allRegions.length; i++) {
+    const reg = allRegions[i];
+    if (yr >= reg.validFrom && yr <= reg.validTo) {
+      activeRegs.push(reg);
+      sig += `${reg.id},`;
+    }
+  }
+
+  if (activeRegs.length === 0) {
+    return EMPTY_TERRITORIES;
+  }
+  if (sig === lastResolvedSig) {
+    return lastResolvedList;
   }
 
   const out: ResolvedTerritoryFeature[] = [];
-  for (const reg of getTerritoryRegions()) {
-    if (yr < reg.validFrom || yr > reg.validTo) continue;
-
+  for (const reg of activeRegs) {
     let resolved = regionFeatureMemo.get(reg.id);
     if (!resolved) {
       const mergedPolygons: [number, number][][][] = [];
@@ -644,9 +853,12 @@ export function resolveActiveOsmTerritories(year: number): ResolvedTerritoryFeat
         };
         const allRegIdsLoaded =
           reg.osmIds.length > 0 && reg.osmIds.every((id) => osmGeometryCache.has(id));
+        const unboundedOnly = isTerritoryExclusivelyUnbounded(reg);
         const cachedOuter = allRegIdsLoaded ? dissolvedBoundaryCache.get(reg.id) : undefined;
-        const outerBoundary = cachedOuter ?? extractDissolvedOuterBoundary(geometry);
-        if (allRegIdsLoaded && !cachedOuter) {
+        const outerBoundary = unboundedOnly
+          ? EMPTY_MULTI_LINE
+          : (cachedOuter ?? smoothBoundaryMultiLineString(extractDissolvedOuterBoundary(geometry)));
+        if (!unboundedOnly && allRegIdsLoaded && !cachedOuter) {
           dissolvedBoundaryCache.set(reg.id, outerBoundary);
         }
 
@@ -672,6 +884,9 @@ export function resolveActiveOsmTerritories(year: number): ResolvedTerritoryFeat
       out.push(resolved);
     }
   }
+
+  lastResolvedSig = sig;
+  lastResolvedList = out;
   return out;
 }
 
@@ -683,31 +898,27 @@ export function seedOsmGeometryCache(entries: Record<string, GeoJsonMultiPolygon
     const normalized = normalizeOsmGeometryToMultiPolygon(geom);
     if (normalized) {
       osmGeometryCache.set(id, normalized);
+      osmIndexedCache.set(id, buildIndexedPolygons(normalized));
     }
   }
   dissolvedBoundaryCache.clear();
   regionFeatureMemo.clear();
+  lastResolvedSig = '';
 }
 
 /**
- * Checks whether a point falls inside any loaded OpenStreetMap territory polygon.
+ * Checks whether a point falls inside any loaded OpenStreetMap territory polygon using prebuilt bbox indices.
  */
 export function isPointInLoadedOsmPolygons(lon: number, lat: number): boolean {
   if (osmGeometryCache.size === 0) return false;
-  for (const geom of osmGeometryCache.values()) {
-    for (const poly of geom.coordinates) {
-      const exterior = poly[0];
-      if (!exterior || exterior.length < 4) continue;
-      if (pointInPolygonRing(lon, lat, exterior)) {
-        let inHole = false;
-        for (let h = 1; h < poly.length; h++) {
-          if (pointInPolygonRing(lon, lat, poly[h])) {
-            inHole = true;
-            break;
-          }
-        }
-        if (!inHole) return true;
-      }
+  for (const [id, geom] of osmGeometryCache.entries()) {
+    let indexed = osmIndexedCache.get(id);
+    if (!indexed) {
+      indexed = buildIndexedPolygons(geom);
+      osmIndexedCache.set(id, indexed);
+    }
+    if (isPointInsideCandidatePolygons(lon, lat, indexed)) {
+      return true;
     }
   }
   return false;

@@ -1,0 +1,401 @@
+{
+  "schemaVersion": "1.0.0",
+  "datasetMeta": {
+    "id": "mycenaean_minoan_bronze",
+    "nameZh": "爱琴海青铜时代古文明（米诺斯与迈锡尼无界势力圈）",
+    "nameEn": "Bronze Age Aegean Civilizations (Minoan & Mycenaean Spheres)",
+    "nameDe": "Bronzezeitliche Ägäis-Kulturen (Minoische & Mykenische Einflusssphären)",
+    "defaultYear": -1450,
+    "cameraCenter": [23.8, 36.9],
+    "cameraZoom": 4.35
+  },
+  "polities": [
+    {
+      "id": "minoan_neopalatial_thalassocracy",
+      "boundaryMode": "unbounded",
+      "nameZh": "米诺斯新王宫文明 · 克诺索斯宫廷与爱琴贸易辐射圈",
+      "nameEn": "Minoan Neopalatial Civilization · Knossos Palace & Aegean Sphere",
+      "nameDe": "Minoische Neupalastzeit · Palastkultur von Knossos & Ägäische Sphäre",
+      "eraSubtitle": "无固定国界古文明 · 克里特王宫核心区与环爱琴海朝贡商贸带（1600–1451 BCE）",
+      "eraSubtitleI18n": {
+        "zh": "无固定国界古文明 · 克里特王宫核心区与环爱琴海朝贡商贸带（1600–1451 BCE）",
+        "en": "Unbounded Ancient Civilization · Cretan Palatial Core & Aegean Trade Sphere (1600–1451 BCE)",
+        "de": "Grenzloses Altertum · Kretische Palastkernzone & Ägäischer Handelsraum (1600–1451 v. Chr.)"
+      },
+      "startYear": -1600,
+      "endYear": -1451,
+      "representativeColor": "#D97706",
+      "borderColor": "#FBBF24",
+      "capitalName": "克诺索斯大王宫 (Knossos)",
+      "capitalNameI18n": {
+        "zh": "克诺索斯大王宫",
+        "en": "Palace of Knossos",
+        "de": "Palast von Knossos"
+      },
+      "capitalCoords": [25.1631, 35.2979],
+      "flagLabel": "Minoan Labrys & Horns of Consecration",
+      "flagSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 64\"><defs><linearGradient id=\"minbg\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0%\" stop-color=\"#7c2d12\"/><stop offset=\"100%\" stop-color=\"#451a03\"/></linearGradient></defs><rect width=\"96\" height=\"64\" rx=\"4\" fill=\"url(#minbg)\"/><rect x=\"3\" y=\"3\" width=\"90\" height=\"58\" rx=\"2\" fill=\"none\" stroke=\"#fbbf24\" stroke-width=\"1.6\"/><path d=\"M48 11 L48 53\" stroke=\"#fde68a\" stroke-width=\"2.6\" stroke-linecap=\"round\"/><path d=\"M48 26 C37 15, 25 17, 25 27 C25 37, 37 39, 48 28 Z\" fill=\"#f59e0b\" stroke=\"#fde68a\" stroke-width=\"1.2\"/><path d=\"M48 26 C59 15, 71 17, 71 27 C71 37, 59 39, 48 28 Z\" fill=\"#f59e0b\" stroke=\"#fde68a\" stroke-width=\"1.2\"/><path d=\"M32 52 L36 42 L42 50 L54 50 L60 42 L64 52 Z\" fill=\"#fde68a\"/></svg>",
+      "coreZones": [
+        { "coords": [25.1631, 35.2979], "radiusLon": 0.62, "radiusLat": 0.42, "weightFactor": 1.0 },
+        { "coords": [24.8142, 35.0514], "radiusLon": 0.48, "radiusLat": 0.36, "weightFactor": 0.92 },
+        { "coords": [25.9261, 35.1582], "radiusLon": 0.46, "radiusLat": 0.34, "weightFactor": 0.86 }
+      ],
+      "influenceZones": [
+        { "coords": [24.02, 35.42], "radiusLon": 0.85, "radiusLat": 0.55, "weightFactor": 0.92 },
+        { "coords": [25.38, 36.75], "radiusLon": 1.35, "radiusLat": 1.15, "weightFactor": 0.88 },
+        { "coords": [22.98, 36.65], "radiusLon": 0.95, "radiusLat": 0.85, "weightFactor": 0.82 },
+        { "coords": [27.27, 37.35], "radiusLon": 1.15, "radiusLat": 0.98, "weightFactor": 0.84 },
+        { "coords": [27.95, 36.20], "radiusLon": 1.05, "radiusLat": 0.82, "weightFactor": 0.80 }
+      ],
+      "historicalSummary": "新王宫时期（MM III–LM IB）米诺斯文明并无现代意义的勘定国界，而是以克里特岛克诺索斯、费斯托斯、马利亚与扎克罗斯四大王宫再分配经济体为核心行政居住区，经基克拉泽斯锡拉（阿克罗蒂里）、米洛斯、基西拉岛及小亚细亚米利都商站向外辐射线形文字 A 记账体系、海洋礼仪与铜锡贸易影响带，向内陆腹地自然消散。",
+      "summaryI18n": {
+        "zh": "新王宫时期（MM III–LM IB）米诺斯文明并无现代意义的勘定国界，而是以克里特岛克诺索斯、费斯托斯、马利亚与扎克罗斯四大王宫再分配经济体为核心行政居住区，经基克拉泽斯锡拉（阿克罗蒂里）、米洛斯、基西拉岛及小亚细亚米利都商站向外辐射线形文字 A 记账体系、海洋礼仪与铜锡贸易影响带，向内陆腹地自然消散。",
+        "en": "Lacking demarcated state borders, Neopalatial Minoan civilization anchored its administrative core in the redistributive palaces of Knossos, Phaistos, Malia, and Zakros on Crete, radiating Linear A accounting, maritime exchange, and ritual influence across the Cyclades, southern Peloponnese, Rhodes, and Anatolian Miletus before fading gradually into surrounding hinterlands.",
+        "de": "Ohne vermessene Staatsgrenzen bildeten die kretischen Palastzentren Knossos, Phaistos, Malia und Zakros die administrative Kernzone der minoischen Kultur, während Linear-A-Verwaltung, Seehandel und Kulteinfluss über die Kykladen, die Süd-Peloponnes, Rhodos und Milet ausstrahlten und zu den Rändern hin sanft ausliefen."
+      },
+      "sourceCitation": "Arthur Evans, The Palace of Minos; Broodbank (2013) The Making of the Middle Sea; Linear A Corpus (GORILA)"
+    },
+    {
+      "id": "mycenaean_palace_koine",
+      "boundaryMode": "unbounded",
+      "nameZh": "迈锡尼宫廷文明共同体 · 瓦纳克斯核心城邦与阿希亚瓦辐射圈",
+      "nameEn": "Mycenaean Palace Koine · Wanax Citadels & Ahhiyawa Sphere",
+      "nameDe": "Mykenische Palastkultur · Wanax-Zitadellen & Ahhiyawa-Einflussraum",
+      "eraSubtitle": "无固定国界古文明 · 伯罗奔尼撒与中希腊巨石卫城核心及爱琴辐射带（1450–1180 BCE）",
+      "eraSubtitleI18n": {
+        "zh": "无固定国界古文明 · 伯罗奔尼撒与中希腊巨石卫城核心及爱琴辐射带（1450–1180 BCE）",
+        "en": "Unbounded Ancient Civilization · Peloponnesian & Boeotian Citadel Cores & Aegean Influence Belt (1450–1180 BCE)",
+        "de": "Grenzloses Altertum · Peloponnesisch-böotische Palastkerne & Ägäische Strahlungszone (1450–1180 v. Chr.)"
+      },
+      "startYear": -1450,
+      "endYear": -1180,
+      "representativeColor": "#0D9488",
+      "borderColor": "#5EEAD4",
+      "capitalName": "迈锡尼狮子门卫城 (Mycenae)",
+      "capitalNameI18n": {
+        "zh": "迈锡尼狮子门卫城",
+        "en": "Citadel of Mycenae",
+        "de": "Zitadelle von Mykene"
+      },
+      "capitalCoords": [22.7562, 37.7308],
+      "flagLabel": "Mycenaean Solar Rosette & Figure-of-Eight Shield",
+      "flagSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 64\"><defs><linearGradient id=\"mycbg\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0%\" stop-color=\"#134e4a\"/><stop offset=\"100%\" stop-color=\"#042f2e\"/></linearGradient></defs><rect width=\"96\" height=\"64\" rx=\"4\" fill=\"url(#mycbg)\"/><rect x=\"3\" y=\"3\" width=\"90\" height=\"58\" rx=\"2\" fill=\"none\" stroke=\"#5eead4\" stroke-width=\"1.6\"/><circle cx=\"48\" cy=\"32\" r=\"15\" fill=\"none\" stroke=\"#fbbf24\" stroke-width=\"2\"/><circle cx=\"48\" cy=\"32\" r=\"5\" fill=\"#fde68a\"/><path d=\"M48 13 L51 24 L45 24 Z M48 51 L51 40 L45 40 Z M29 32 L40 29 L40 35 Z M67 32 L56 29 L56 35 Z\" fill=\"#fbbf24\"/></svg>",
+      "coreZones": [
+        { "coords": [22.7562, 37.7308], "radiusLon": 0.65, "radiusLat": 0.52, "weightFactor": 1.0 },
+        { "coords": [21.6953, 37.0281], "radiusLon": 0.56, "radiusLat": 0.46, "weightFactor": 0.94 },
+        { "coords": [22.4547, 37.0672], "radiusLon": 0.52, "radiusLat": 0.44, "weightFactor": 0.88 },
+        { "coords": [23.3189, 38.3208], "radiusLon": 0.62, "radiusLat": 0.48, "weightFactor": 0.94 },
+        { "coords": [23.7262, 37.9715], "radiusLon": 0.50, "radiusLat": 0.40, "weightFactor": 0.88 },
+        { "coords": [25.1631, 35.2979], "radiusLon": 0.56, "radiusLat": 0.38, "weightFactor": 0.86 }
+      ],
+      "influenceZones": [
+        { "coords": [22.15, 37.65], "radiusLon": 1.35, "radiusLat": 1.10, "weightFactor": 0.92 },
+        { "coords": [22.85, 39.15], "radiusLon": 1.45, "radiusLat": 1.15, "weightFactor": 0.86 },
+        { "coords": [21.55, 38.55], "radiusLon": 1.25, "radiusLat": 1.02, "weightFactor": 0.80 },
+        { "coords": [23.85, 38.48], "radiusLon": 1.15, "radiusLat": 0.92, "weightFactor": 0.86 },
+        { "coords": [25.25, 37.05], "radiusLon": 1.30, "radiusLat": 1.08, "weightFactor": 0.82 },
+        { "coords": [27.32, 37.45], "radiusLon": 1.38, "radiusLat": 1.15, "weightFactor": 0.84 },
+        { "coords": [27.95, 36.18], "radiusLon": 1.10, "radiusLat": 0.85, "weightFactor": 0.80 }
+      ],
+      "historicalSummary": "青铜时代晚期（LH II–IIIB）迈锡尼诸王宫（迈锡尼、梯林斯、派罗斯、底比斯、雅典及迈锡尼化克诺索斯）以“瓦纳克斯”（wa-na-ka）线形文字 B 泥版行政圈构成高凝聚度核心居住区；外围并无近代条约国界，而是通过战车贵族朝贡、军事巡航与赫梯文献所载“阿希亚瓦”（Ahhiyawa）贸易前哨向色萨利、爱琴诸岛、罗得岛及小亚细亚西岸形成广阔渐变辐射带，最终平滑消融于无主荒原。",
+      "summaryI18n": {
+        "zh": "青铜时代晚期（LH II–IIIB）迈锡尼诸王宫（迈锡尼、梯林斯、派罗斯、底比斯、雅典及迈锡尼化克诺索斯）以“瓦纳克斯”（wa-na-ka）线形文字 B 泥版行政圈构成高凝聚度核心居住区；外围并无近代条约国界，而是通过战车贵族朝贡、军事巡航与赫梯文献所载“阿希亚瓦”（Ahhiyawa）贸易前哨向色萨利、爱琴诸岛、罗得岛及小亚细亚西岸形成广阔渐变辐射带，最终平滑消融于无主荒原。",
+        "en": "Late Bronze Age Mycenaean civilization operated without fixed territorial frontiers: fortified Linear B wanax citadels at Mycenae, Tiryns, Pylos, Thebes, Athens, and Knossos formed dense administrative cores, while tributary networks, naval patrols, and Ahhiyawa trade outposts radiated across Thessaly, the Cyclades, Rhodes, and western Anatolia before fading seamlessly into Terra Nullius.",
+        "de": "Die spätbronzezeitliche mykenische Kultur kannte keine festen Staatsgrenzen: Linear-B-Palastzentren unter einem Wanax (Mykene, Tiryns, Pylos, Theben, Athen, Knossos) bildeten kompakte Kernzonen, während Tributbeziehungen, Flottenpatrouillen und Ahhiyawa-Handelsposten weit über Thessalien, die Kykladen, Rhodos und Westanatolien ausstrahlten und sanft im unbeherrschten Umland ausliefen."
+      },
+      "sourceCitation": "Ventris & Chadwick (1956) Documents in Mycenaean Greek; Cline (2014) 1177 B.C.; Hittite Ahhiyawa Texts (CTH 181–183)"
+    }
+  ],
+  "territories": [
+    {
+      "id": "bronze_crete_palatial_heartland",
+      "polityId": "minoan_neopalatial_thalassocracy",
+      "nameZh": "克里特四大王宫核心区（克诺索斯、费斯托斯、马利亚与扎克罗斯）",
+      "nameI18n": {
+        "zh": "克里特四大王宫核心区（克诺索斯、费斯托斯、马利亚与扎克罗斯）",
+        "en": "Cretan Palatial Heartland (Knossos, Phaistos, Malia & Zakros)",
+        "de": "Kretisches Palastkernland (Knossos, Phaistos, Malia & Zakros)"
+      },
+      "validFrom": -1600,
+      "validTo": -1451,
+      "tier": "metropolis",
+      "osmIds": ["R453129"],
+      "approxBBox": { "minLon": 23.47, "minLat": 34.80, "maxLon": 26.35, "maxLat": 35.70 }
+    },
+    {
+      "id": "bronze_minoan_aegean_influence_belt",
+      "polityId": "minoan_neopalatial_thalassocracy",
+      "nameZh": "基克拉泽斯群岛、罗得岛与米利都米诺斯商贸辐射带",
+      "nameI18n": {
+        "zh": "基克拉泽斯群岛、罗得岛与米利都米诺斯商贸辐射带",
+        "en": "Cycladic, Rhodian & Milesian Minoan Exchange Belt",
+        "de": "Kykladisch-rhodisch-milesischer minoischer Handelsgürtel"
+      },
+      "validFrom": -1600,
+      "validTo": -1451,
+      "tier": "allied_tribute",
+      "osmIds": ["R531131", "R531101", "R531102", "R531969", "R453964", "R452614", "R536480", "R1827275"],
+      "approxBBox": { "minLon": 24.25, "minLat": 35.85, "maxLon": 28.30, "maxLat": 37.98 }
+    },
+    {
+      "id": "bronze_mycenaean_citadel_cores",
+      "polityId": "mycenaean_palace_koine",
+      "nameZh": "中希腊底比斯、阿提卡卫城与克诺索斯线形文字 B 王宫核心带",
+      "nameI18n": {
+        "zh": "中希腊底比斯、阿提卡卫城与克诺索斯线形文字 B 王宫核心带",
+        "en": "Boeotian, Attic & Cretan Linear B Palatial Cores",
+        "de": "Böotische, attische & kretische Linear-B-Palastkerngebiete"
+      },
+      "validFrom": -1450,
+      "validTo": -1180,
+      "tier": "metropolis",
+      "osmIds": ["R957707", "R557546", "R543490", "R453129"],
+      "approxBBox": { "minLon": 22.55, "minLat": 34.80, "maxLon": 26.35, "maxLat": 38.62 }
+    },
+    {
+      "id": "bronze_mycenaean_ahhiyawa_periphery",
+      "polityId": "mycenaean_palace_koine",
+      "nameZh": "优卑亚、基克拉泽斯、罗得岛与小亚细亚米利都（阿希亚瓦）辐射带",
+      "nameI18n": {
+        "zh": "优卑亚、基克拉泽斯、罗得岛与小亚细亚米利都（阿希亚瓦）辐射带",
+        "en": "Euboea, Cyclades, Rhodes & Milesian Ahhiyawa Influence Zone",
+        "de": "Euböa, Kykladen, Rhodos & milesische Ahhiyawa-Einflusszone"
+      },
+      "validFrom": -1450,
+      "validTo": -1180,
+      "tier": "allied_tribute",
+      "osmIds": ["R3301815", "R531131", "R531101", "R531969", "R453964", "R452614", "R536480", "R1827275"],
+      "approxBBox": { "minLon": 22.82, "minLat": 35.85, "maxLon": 28.30, "maxLat": 39.05 }
+    }
+  ],
+  "populationNodes": [
+    {
+      "id": "pop_bronze_knossos_urban",
+      "nameZh": "克诺索斯王宫大聚落与阿姆尼索斯海港带",
+      "nameI18n": {
+        "zh": "克诺索斯王宫大聚落与阿姆尼索斯海港带",
+        "en": "Knossos Palatial Agglomeration & Amnisos Port",
+        "de": "Palastsiedlung Knossos & Hafen Amnisos"
+      },
+      "center": [25.1631, 35.2979],
+      "radiusDegLon": 0.55,
+      "radiusDegLat": 0.36,
+      "validFrom": -1600,
+      "validTo": -1180,
+      "densityKeyframes": [
+        [-1600, 118],
+        [-1500, 148],
+        [-1400, 112],
+        [-1250, 95],
+        [-1180, 46]
+      ],
+      "estimatedTotalNote": "新王宫极盛期克诺索斯城区人口估计达 4 万至 8 万，为青铜时代爱琴最大聚落",
+      "noteI18n": {
+        "zh": "新王宫极盛期克诺索斯城区人口估计达 4 万至 8 万，为青铜时代爱琴最大聚落",
+        "en": "Estimated 40,000–80,000 inhabitants at Neopalatial peak, largest Bronze Age Aegean center",
+        "de": "Schätzungsweise 40.000–80.000 Einwohner zur Neupalast-Blütezeit"
+      }
+    },
+    {
+      "id": "pop_bronze_argolid_mycenae_tiryns",
+      "nameZh": "阿尔戈利斯平原双卫城聚落群（迈锡尼与梯林斯）",
+      "nameI18n": {
+        "zh": "阿尔戈利斯平原双卫城聚落群（迈锡尼与梯林斯）",
+        "en": "Argolid Plain Citadel Cluster (Mycenae & Tiryns)",
+        "de": "Argolis-Zitadellenverbund (Mykene & Tiryns)"
+      },
+      "center": [22.76, 37.68],
+      "radiusDegLon": 0.58,
+      "radiusDegLat": 0.48,
+      "validFrom": -1600,
+      "validTo": -1180,
+      "densityKeyframes": [
+        [-1600, 62],
+        [-1450, 110],
+        [-1300, 145],
+        [-1220, 152],
+        [-1180, 54]
+      ],
+      "estimatedTotalNote": "线形文字 B 泥版记载高密度铜匠、纺织女工与战车武士聚落网",
+      "noteI18n": {
+        "zh": "线形文字 B 泥版记载高密度铜匠、纺织女工与战车武士聚落网",
+        "en": "Dense settlement network of palace artisans, textile workers, and chariot elites",
+        "de": "Dichtes Siedlungsnetz von Palasthandwerkern, Textilarbeiterinnen und Streitwagenadel"
+      }
+    },
+    {
+      "id": "pop_bronze_pylos_messenia",
+      "nameZh": "美塞尼亚派罗斯（涅斯托尔王宫）近省与远省聚落带",
+      "nameI18n": {
+        "zh": "美塞尼亚派罗斯（涅斯托尔王宫）近省与远省聚落带",
+        "en": "Messenia Pylos Hither & Further Provinces",
+        "de": "Messenisches Reich von Pylos (Diesseitige & Jenseitige Provinz)"
+      },
+      "center": [21.6953, 37.0281],
+      "radiusDegLon": 0.52,
+      "radiusDegLat": 0.46,
+      "validFrom": -1500,
+      "validTo": -1180,
+      "densityKeyframes": [
+        [-1500, 58],
+        [-1350, 96],
+        [-1230, 118],
+        [-1180, 35]
+      ],
+      "estimatedTotalNote": "派罗斯泥版档案统计辖内约 200 座村镇、逾 5 万人口",
+      "noteI18n": {
+        "zh": "派罗斯泥版档案统计辖内约 200 座村镇、逾 5 万人口",
+        "en": "Linear B tablets attest ~200 towns and ~50,000 inhabitants across two provinces",
+        "de": "Linear-B-Archive belegen rund 200 Siedlungen mit ca. 50.000 Einwohnern"
+      }
+    }
+  ],
+  "nightLightNodes": [
+    {
+      "id": "nl_bronze_knossos_lustral_hearths",
+      "nameZh": "克诺索斯中央庭院祭坛长明火与陶油灯坊",
+      "nameI18n": {
+        "zh": "克诺索斯中央庭院祭坛长明火与陶油灯坊",
+        "en": "Knossos Central Court Sanctuary Flames & Stone Lamps",
+        "de": "Heiligtumsfeuer & Steinlampen im Zentralhof von Knossos"
+      },
+      "category": "sanctuary_flame",
+      "coords": [25.1631, 35.2979],
+      "spreadDeg": 0.24,
+      "validFrom": -1600,
+      "validTo": -1200,
+      "intensityKeyframes": [
+        [-1600, 0.82],
+        [-1500, 0.94],
+        [-1380, 0.72],
+        [-1200, 0.42]
+      ],
+      "description": "克诺索斯多层宫殿石雕蛇纹石油灯群与双斧圣所夜祭火光",
+      "descriptionI18n": {
+        "zh": "克诺索斯多层宫殿石雕蛇纹石油灯群与双斧圣所夜祭火光",
+        "en": "Carved serpentine oil lamps and nocturnal sanctuary braziers across the Knossos labyrinth",
+        "de": "Serpentin-Öllampen und nächtliche Kultfeuer im Palastkomplex von Knossos"
+      }
+    },
+    {
+      "id": "nl_bronze_mycenae_megaron_foundries",
+      "nameZh": "迈锡尼大殿圆炉圣火与王宫青铜铸造炉群",
+      "nameI18n": {
+        "zh": "迈锡尼大殿圆炉圣火与王宫青铜铸造炉群",
+        "en": "Mycenae Megaron Great Hearth & Bronze Foundries",
+        "de": "Großer Megaron-Herd & Bronzegießereien von Mykene"
+      },
+      "category": "smelting_furnace",
+      "coords": [22.7562, 37.7308],
+      "spreadDeg": 0.26,
+      "validFrom": -1500,
+      "validTo": -1180,
+      "intensityKeyframes": [
+        [-1500, 0.68],
+        [-1350, 0.91],
+        [-1230, 0.95],
+        [-1180, 0.34]
+      ],
+      "description": "迈锡尼与梯林斯正厅（Megaron）中央彩绘巨型火塘及王室ka-ke-we铜匠夜炉",
+      "descriptionI18n": {
+        "zh": "迈锡尼与梯林斯正厅（Megaron）中央彩绘巨型火塘及王室ka-ke-we铜匠夜炉",
+        "en": "Monumental painted Megaron hearths and royal ka-ke-we bronze-smithing furnaces",
+        "de": "Monumentale Megaron-Herdfeuer und königliche ka-ke-we-Bronzeschmieden"
+      }
+    }
+  ],
+  "speciesDiscoveries": [
+    {
+      "id": "sp_bronze_aegean_saffron_crocus",
+      "commonNameZh": "爱琴海野生番红花（克里特与锡拉祭礼壁画品系）",
+      "commonNameI18n": {
+        "zh": "爱琴海野生番红花（克里特与锡拉祭礼壁画品系）",
+        "en": "Aegean Wild Saffron Crocus",
+        "de": "Ägäischer Wild-Safrankrokus"
+      },
+      "scientificName": "Crocus cartwrightianus",
+      "classicalSourceName": "ko-ro-ku (Linear B 𐀒𐀫𐀓 · κρόκος)",
+      "kingdom": "plantae",
+      "discovererZh": "阿克罗蒂里《采番红花少女》壁画与克诺索斯线形文字泥版记述",
+      "discovererEn": "Akrotiri Saffron-Gatherers Fresco & Knossos Linear B Tablets",
+      "discovererI18n": {
+        "zh": "阿克罗蒂里《采番红花少女》壁画与克诺索斯线形文字泥版记述",
+        "en": "Akrotiri Saffron-Gatherers Fresco & Knossos Linear B Tablets",
+        "de": "Safransammlerinnen-Fresko von Akrotiri & Linear-B-Tafeln aus Knossos"
+      },
+      "discoveryYear": -1550,
+      "locationNameZh": "锡拉岛阿克罗蒂里与克诺索斯",
+      "locationI18n": {
+        "zh": "锡拉岛阿克罗蒂里与克诺索斯",
+        "en": "Akrotiri (Thera) & Knossos",
+        "de": "Akrotiri (Thera) & Knossos"
+      },
+      "coords": [25.4036, 36.3517],
+      "historicalNote": "青铜时代爱琴宫廷将野生卡氏番红花雄蕊用于女神献祭、药用镇痛与皇家金黄织物染色，线形文字 B 泥版以象形符号与音节 ko-ro-ku 精确计量。",
+      "noteI18n": {
+        "zh": "青铜时代爱琴宫廷将野生卡氏番红花雄蕊用于女神献祭、药用镇痛与皇家金黄织物染色，线形文字 B 泥版以象形符号与音节 ko-ro-ku 精确计量。",
+        "en": "Harvested across Crete and Thera for ritual offerings, medicine, and royal golden dye, tallied on palace tablets under the Linear B ideogram CROC and syllabic ko-ro-ku.",
+        "de": "Auf Kreta und Thera für Kultopfer, Heilzwecke und goldgelbe Textilfärbung geerntet und auf Linear-B-Palasttafeln als ko-ro-ku verzeichnet."
+      },
+      "sourceCitation": "Doumas (1992) The Wall-Paintings of Thera; Knossos Tablet Np 85 / CROC Ideogram"
+    }
+  ],
+  "mortalityCatastrophes": [
+    {
+      "id": "cat_thera_minoan_eruption",
+      "nameZh": "锡拉岛（圣托里尼）米诺斯超级火山喷发与爱琴海啸",
+      "nameI18n": {
+        "zh": "锡拉岛（圣托里尼）米诺斯超级火山喷发与爱琴海啸",
+        "en": "Minoan Eruption of Thera & Aegean Megatsunami",
+        "de": "Minoischer Vulkanausbruch auf Thera & Ägäischer Tsunami"
+      },
+      "causeCategory": "siege_famine",
+      "startYear": -1562,
+      "endYear": -1558,
+      "coords": [25.396, 36.404],
+      "spreadDeg": 1.65,
+      "estimatedDeaths": 28000,
+      "locationNameZh": "锡拉破火山口与克里特北岸海港带",
+      "locationI18n": {
+        "zh": "锡拉破火山口与克里特北岸海港带",
+        "en": "Thera Caldera & Northern Cretan Littoral",
+        "de": "Thera-Caldera & Nordkretische Küste"
+      },
+      "historicalNote": "人类信史最大规模火山爆发之一（VEI 6–7），彻底掩埋阿克罗蒂里繁荣商港，数十米海啸重创克里特北岸阿姆尼索斯与帕莱卡斯特罗船队与农田。",
+      "noteI18n": {
+        "zh": "人类信史最大规模火山爆发之一（VEI 6–7），彻底掩埋阿克罗蒂里繁荣商港，数十米海啸重创克里特北岸阿姆尼索斯与帕莱卡斯特罗船队与农田。",
+        "en": "One of the largest Holocene eruptions (VEI 6–7), burying Akrotiri in pumice and generating tsunamis that devastated northern Cretan ports and harvests.",
+        "de": "Eine der stärksten Eruptionen des Holozäns (VEI 6–7), die Akrotiri unter Bimsstein begrub und Nordkretas Häfen durch Tsunamis verwüstete."
+      },
+      "sourceCitation": "Manning et al. (2006) Science; Bruins et al. (2008) Palaikastro Tsunami Deposits"
+    },
+    {
+      "id": "cat_late_bronze_palace_collapse",
+      "nameZh": "青铜时代晚期大崩溃 · 迈锡尼、派罗斯与底比斯王宫焚毁",
+      "nameI18n": {
+        "zh": "青铜时代晚期大崩溃 · 迈锡尼、派罗斯与底比斯王宫焚毁",
+        "en": "Late Bronze Age Collapse · Destruction of Mycenae, Pylos & Thebes",
+        "de": "Spätbronzezeitlicher Kollaps · Brandzerstörung von Mykene, Pylos & Theben"
+      },
+      "causeCategory": "warfare",
+      "startYear": -1205,
+      "endYear": -1180,
+      "coords": [22.7562, 37.7308],
+      "spreadDeg": 1.85,
+      "estimatedDeaths": 54000,
+      "locationNameZh": "伯罗奔尼撒派罗斯、迈锡尼、梯林斯与维奥蒂亚",
+      "locationI18n": {
+        "zh": "伯罗奔尼撒派罗斯、迈锡尼、梯林斯与维奥蒂亚",
+        "en": "Pylos, Mycenae, Tiryns & Boeotian Citadels",
+        "de": "Pylos, Mykene, Tiryns & Böotische Palastzentren"
+      },
+      "historicalNote": "派罗斯紧急海岸设防泥版（o-ka 系列）烤硬定格于熊熊大火，迈锡尼、梯林斯与底比斯宫殿相继焚毁，线形文字 B 官僚体系终结，爱琴世界跌入黑暗时代。",
+      "noteI18n": {
+        "zh": "派罗斯紧急海岸设防泥版（o-ka 系列）烤硬定格于熊熊大火，迈锡尼、梯林斯与底比斯宫殿相继焚毁，线形文字 B 官僚体系终结，爱琴世界跌入黑暗时代。",
+        "en": "Conflagrations baked the emergency coastal-watch o-ka tablets at Pylos and destroyed the citadels of Mycenae, Tiryns, and Thebes, ending Linear B literacy.",
+        "de": "Großbrände härteten die o-ka-Küstenwachtafeln in Pylos und zerstörten die Paläste von Mykene, Tiryns und Theben am Ende der Bronzezeit."
+      },
+      "sourceCitation": "Pylos An 657 (o-ka Tablets); Eric H. Cline (2014) 1177 B.C.: The Year Civilization Collapsed"
+    }
+  ]
+}

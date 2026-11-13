@@ -27,6 +27,8 @@ export type FlagVariantId =
 
 export type TerritoryTier = 'metropolis' | 'cleruchy' | 'allied_tribute';
 
+export type PolityBoundaryMode = 'demarcated' | 'unbounded';
+
 export interface GeoJsonMultiPolygon {
   type: 'MultiPolygon';
   coordinates: [number, number][][][];
@@ -46,6 +48,16 @@ export interface PolityPhase {
   endYear: number;   // Inclusive, e.g., -404 = 404 BCE
   representativeColor: string;
   borderColor: string;
+  /**
+   * Cartographic territory rendering mode:
+   * - 'demarcated' (default): surveyed sovereign choropleth + smoothed outer frontier strokes for states with borders.
+   * - 'unbounded': Core Zone (0.60–0.85 + soft edge) + wider Influence Zone (0.20–0.40) + smooth gradient falloff (Alpha -> 0) into Terra Nullius, strictly for ancient borderless civilizations/forces.
+   */
+  boundaryMode?: PolityBoundaryMode;
+  /** Optional explicit continental Core Administrative & Settlement Zone lobes for 'unbounded' ancient civilizations */
+  coreZones?: ThermalSubZone[];
+  /** Optional explicit continental Radiating Influence Zone lobes for 'unbounded' ancient civilizations */
+  influenceZones?: ThermalSubZone[];
   flagId?: FlagVariantId;
   /** Optional inline sanitized SVG markup (<svg ...>...</svg>) for custom historical flags */
   flagSvg?: string;

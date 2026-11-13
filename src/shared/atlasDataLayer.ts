@@ -1,4 +1,5 @@
 import classicalAthensRaw from '../../data/datasets/classical_athens.json';
+import mycenaeanMinoanBronzeRaw from '../../data/datasets/mycenaean_minoan_bronze.json';
 import romanPrincipateRaw from '../../data/datasets/roman_principate.json';
 import solarSystemRaw from '../../data/datasets/solar_system.json';
 import {
@@ -47,6 +48,7 @@ interface RawSolarSystemFile {
 
 const BUILTIN_DATASET_FILES: RawDatasetFile[] = [
   classicalAthensRaw as unknown as RawDatasetFile,
+  mycenaeanMinoanBronzeRaw as unknown as RawDatasetFile,
   romanPrincipateRaw as unknown as RawDatasetFile,
 ];
 
@@ -106,6 +108,109 @@ let backendDatasetsBundle: AtlasImportBundle | null = null;
 let runtimeImportedBundle: AtlasImportBundle | null = null;
 const dataLayerListeners = new Set<() => void>();
 
+interface CachedActiveLayer {
+  polities: ImportedPolityRecord[];
+  territories: ImportedTerritoryRecord[];
+  populationNodes: ImportedPopulationNodeRecord[];
+  nightLightNodes: ImportedNightLightNodeRecord[];
+  transportRoutes: ImportedTransportRouteRecord[];
+  speciesDiscoveries: ImportedSpeciesDiscoveryRecord[];
+  mortalityCatastrophes: ImportedMortalityCatastropheRecord[];
+  spaceMissions: SpaceMission[];
+  customEvents: CustomHistoricalEvent[];
+  bounds: { minYear: number; maxYear: number } | null;
+}
+
+let cachedActiveLayer: CachedActiveLayer | null = null;
+
+function invalidateActiveLayerCache(): void {
+  cachedActiveLayer = null;
+}
+
+function getCachedActiveLayer(): CachedActiveLayer {
+  if (cachedActiveLayer) return cachedActiveLayer;
+
+  const polities = mergeById<ImportedPolityRecord>(
+    BUILTIN_MERGED_BUNDLE.polities,
+    backendDatasetsBundle?.polities,
+    runtimeImportedBundle?.polities,
+  );
+  const territories = mergeById<ImportedTerritoryRecord>(
+    BUILTIN_MERGED_BUNDLE.territories,
+    backendDatasetsBundle?.territories,
+    runtimeImportedBundle?.territories,
+  );
+  const populationNodes = mergeById<ImportedPopulationNodeRecord>(
+    BUILTIN_MERGED_BUNDLE.populationNodes,
+    backendDatasetsBundle?.populationNodes,
+    runtimeImportedBundle?.populationNodes,
+  );
+  const nightLightNodes = mergeById<ImportedNightLightNodeRecord>(
+    BUILTIN_MERGED_BUNDLE.nightLightNodes,
+    backendDatasetsBundle?.nightLightNodes,
+    runtimeImportedBundle?.nightLightNodes,
+  );
+  const transportRoutes = mergeById<ImportedTransportRouteRecord>(
+    BUILTIN_MERGED_BUNDLE.transportRoutes,
+    backendDatasetsBundle?.transportRoutes,
+    runtimeImportedBundle?.transportRoutes,
+  );
+  const speciesDiscoveries = mergeById<ImportedSpeciesDiscoveryRecord>(
+    BUILTIN_MERGED_BUNDLE.speciesDiscoveries,
+    backendDatasetsBundle?.speciesDiscoveries,
+    runtimeImportedBundle?.speciesDiscoveries,
+  );
+  const mortalityCatastrophes = mergeById<ImportedMortalityCatastropheRecord>(
+    BUILTIN_MERGED_BUNDLE.mortalityCatastrophes,
+    backendDatasetsBundle?.mortalityCatastrophes,
+    runtimeImportedBundle?.mortalityCatastrophes,
+  );
+  const spaceMissions = mergeById<SpaceMission>(
+    BUILTIN_MERGED_BUNDLE.spaceMissions,
+    backendDatasetsBundle?.spaceMissions,
+    runtimeImportedBundle?.spaceMissions,
+  );
+  const customEvents: CustomHistoricalEvent[] = [...(BUILTIN_MERGED_BUNDLE.customEvents || [])];
+  const seen = new Set(customEvents.map((e) => e.id).filter(Boolean));
+  for (const source of [
+    backendDatasetsBundle?.customEvents,
+    runtimeImportedBundle?.customEvents,
+  ]) {
+    if (!Array.isArray(source)) continue;
+    for (const ev of source) {
+      if (ev.id && seen.has(ev.id)) continue;
+      if (ev.id) seen.add(ev.id);
+      customEvents.push(ev);
+    }
+  }
+
+  const bounds = computeBoundsFromLists(
+    polities,
+    territories,
+    populationNodes,
+    nightLightNodes,
+    transportRoutes,
+    speciesDiscoveries,
+    mortalityCatastrophes,
+    spaceMissions,
+    customEvents,
+  );
+
+  cachedActiveLayer = {
+    polities,
+    territories,
+    populationNodes,
+    nightLightNodes,
+    transportRoutes,
+    speciesDiscoveries,
+    mortalityCatastrophes,
+    spaceMissions,
+    customEvents,
+    bounds,
+  };
+  return cachedActiveLayer;
+}
+
 export function subscribeAtlasDataLayer(listener: () => void): () => void {
   dataLayerListeners.add(listener);
   return () => {
@@ -115,11 +220,13 @@ export function subscribeAtlasDataLayer(listener: () => void): () => void {
 
 export function setBackendDatasetsBundle(bundle: AtlasImportBundle | null | undefined): void {
   backendDatasetsBundle = bundle ?? null;
+  invalidateActiveLayerCache();
   dataLayerListeners.forEach((cb) => cb());
 }
 
 export function setRuntimeImportedBundle(bundle: AtlasImportBundle | null | undefined): void {
   runtimeImportedBundle = bundle ?? null;
+  invalidateActiveLayerCache();
   dataLayerListeners.forEach((cb) => cb());
 }
 
@@ -145,78 +252,57 @@ export function getBackendDetectedDatasetSummary(): {
 }
 
 export function getPolityPhases(extraBundle?: AtlasImportBundle | null): ImportedPolityRecord[] {
-  return mergeById<ImportedPolityRecord>(
-    BUILTIN_MERGED_BUNDLE.polities,
-    backendDatasetsBundle?.polities,
-    runtimeImportedBundle?.polities,
-    extraBundle?.polities,
-  );
+  const base = getCachedActiveLayer().polities;
+  if (!extraBundle?.polities?.length) return base;
+  return mergeById<ImportedPolityRecord>(base, extraBundle.polities);
 }
 
 export function getTerritoryRegions(
   extraBundle?: AtlasImportBundle | null,
 ): ImportedTerritoryRecord[] {
-  return mergeById<ImportedTerritoryRecord>(
-    BUILTIN_MERGED_BUNDLE.territories,
-    backendDatasetsBundle?.territories,
-    runtimeImportedBundle?.territories,
-    extraBundle?.territories,
-  );
+  const base = getCachedActiveLayer().territories;
+  if (!extraBundle?.territories?.length) return base;
+  return mergeById<ImportedTerritoryRecord>(base, extraBundle.territories);
 }
 
 export function getPopulationNodes(
   extraBundle?: AtlasImportBundle | null,
 ): ImportedPopulationNodeRecord[] {
-  return mergeById<ImportedPopulationNodeRecord>(
-    BUILTIN_MERGED_BUNDLE.populationNodes,
-    backendDatasetsBundle?.populationNodes,
-    runtimeImportedBundle?.populationNodes,
-    extraBundle?.populationNodes,
-  );
+  const base = getCachedActiveLayer().populationNodes;
+  if (!extraBundle?.populationNodes?.length) return base;
+  return mergeById<ImportedPopulationNodeRecord>(base, extraBundle.populationNodes);
 }
 
 export function getNightLightNodes(
   extraBundle?: AtlasImportBundle | null,
 ): ImportedNightLightNodeRecord[] {
-  return mergeById<ImportedNightLightNodeRecord>(
-    BUILTIN_MERGED_BUNDLE.nightLightNodes,
-    backendDatasetsBundle?.nightLightNodes,
-    runtimeImportedBundle?.nightLightNodes,
-    extraBundle?.nightLightNodes,
-  );
+  const base = getCachedActiveLayer().nightLightNodes;
+  if (!extraBundle?.nightLightNodes?.length) return base;
+  return mergeById<ImportedNightLightNodeRecord>(base, extraBundle.nightLightNodes);
 }
 
 export function getTransportRoutes(
   extraBundle?: AtlasImportBundle | null,
 ): ImportedTransportRouteRecord[] {
-  return mergeById<ImportedTransportRouteRecord>(
-    BUILTIN_MERGED_BUNDLE.transportRoutes,
-    backendDatasetsBundle?.transportRoutes,
-    runtimeImportedBundle?.transportRoutes,
-    extraBundle?.transportRoutes,
-  );
+  const base = getCachedActiveLayer().transportRoutes;
+  if (!extraBundle?.transportRoutes?.length) return base;
+  return mergeById<ImportedTransportRouteRecord>(base, extraBundle.transportRoutes);
 }
 
 export function getSpeciesDiscoveries(
   extraBundle?: AtlasImportBundle | null,
 ): ImportedSpeciesDiscoveryRecord[] {
-  return mergeById<ImportedSpeciesDiscoveryRecord>(
-    BUILTIN_MERGED_BUNDLE.speciesDiscoveries,
-    backendDatasetsBundle?.speciesDiscoveries,
-    runtimeImportedBundle?.speciesDiscoveries,
-    extraBundle?.speciesDiscoveries,
-  );
+  const base = getCachedActiveLayer().speciesDiscoveries;
+  if (!extraBundle?.speciesDiscoveries?.length) return base;
+  return mergeById<ImportedSpeciesDiscoveryRecord>(base, extraBundle.speciesDiscoveries);
 }
 
 export function getMortalityCatastrophes(
   extraBundle?: AtlasImportBundle | null,
 ): ImportedMortalityCatastropheRecord[] {
-  return mergeById<ImportedMortalityCatastropheRecord>(
-    BUILTIN_MERGED_BUNDLE.mortalityCatastrophes,
-    backendDatasetsBundle?.mortalityCatastrophes,
-    runtimeImportedBundle?.mortalityCatastrophes,
-    extraBundle?.mortalityCatastrophes,
-  );
+  const base = getCachedActiveLayer().mortalityCatastrophes;
+  if (!extraBundle?.mortalityCatastrophes?.length) return base;
+  return mergeById<ImportedMortalityCatastropheRecord>(base, extraBundle.mortalityCatastrophes);
 }
 
 export function getSolarSystemBodies(): CelestialBodySpec[] {
@@ -224,28 +310,21 @@ export function getSolarSystemBodies(): CelestialBodySpec[] {
 }
 
 export function getSpaceMissions(extraBundle?: AtlasImportBundle | null): SpaceMission[] {
-  return mergeById<SpaceMission>(
-    BUILTIN_MERGED_BUNDLE.spaceMissions,
-    backendDatasetsBundle?.spaceMissions,
-    runtimeImportedBundle?.spaceMissions,
-    extraBundle?.spaceMissions,
-  );
+  const base = getCachedActiveLayer().spaceMissions;
+  if (!extraBundle?.spaceMissions?.length) return base;
+  return mergeById<SpaceMission>(base, extraBundle.spaceMissions);
 }
 
 export function getCustomHistoricalEvents(
   extraEvents?: CustomHistoricalEvent[],
   extraBundle?: AtlasImportBundle | null,
 ): CustomHistoricalEvent[] {
-  const combined: CustomHistoricalEvent[] = [
-    ...(BUILTIN_MERGED_BUNDLE.customEvents || []),
-    ...(extraEvents || []),
-  ];
+  const base = getCachedActiveLayer().customEvents;
+  if (!extraEvents?.length && !extraBundle?.customEvents?.length) return base;
+
+  const combined: CustomHistoricalEvent[] = [...base];
   const seen = new Set(combined.map((e) => e.id).filter(Boolean));
-  for (const source of [
-    backendDatasetsBundle?.customEvents,
-    runtimeImportedBundle?.customEvents,
-    extraBundle?.customEvents,
-  ]) {
+  for (const source of [extraEvents, extraBundle?.customEvents]) {
     if (!Array.isArray(source)) continue;
     for (const ev of source) {
       if (ev.id && seen.has(ev.id)) continue;
@@ -256,23 +335,17 @@ export function getCustomHistoricalEvents(
   return combined;
 }
 
-/**
- * Dynamically derives the `[minYear, maxYear]` window strictly from the records present in a dataset bundle
- * (or the active merged data layer when omitted), with zero hardcoded civilization year constants.
- */
-export function computeDatasetYearBounds(
-  bundle?: Partial<AtlasImportBundle> | null,
+function computeBoundsFromLists(
+  polities: ImportedPolityRecord[],
+  territories: ImportedTerritoryRecord[],
+  popNodes: ImportedPopulationNodeRecord[],
+  nightNodes: ImportedNightLightNodeRecord[],
+  routes: ImportedTransportRouteRecord[],
+  species: ImportedSpeciesDiscoveryRecord[],
+  catastrophes: ImportedMortalityCatastropheRecord[],
+  missions: SpaceMission[],
+  customEvents: CustomHistoricalEvent[],
 ): { minYear: number; maxYear: number } | null {
-  const polities = bundle ? bundle.polities || [] : getPolityPhases();
-  const territories = bundle ? bundle.territories || [] : getTerritoryRegions();
-  const popNodes = bundle ? bundle.populationNodes || [] : getPopulationNodes();
-  const nightNodes = bundle ? bundle.nightLightNodes || [] : getNightLightNodes();
-  const routes = bundle ? bundle.transportRoutes || [] : getTransportRoutes();
-  const species = bundle ? bundle.speciesDiscoveries || [] : getSpeciesDiscoveries();
-  const catastrophes = bundle ? bundle.mortalityCatastrophes || [] : getMortalityCatastrophes();
-  const missions = bundle ? bundle.spaceMissions || [] : getSpaceMissions();
-  const customEvents = bundle ? bundle.customEvents || [] : getCustomHistoricalEvents();
-
   let minYear = Infinity;
   let maxYear = -Infinity;
 
@@ -327,6 +400,29 @@ export function computeDatasetYearBounds(
     minYear: Math.round(minYear),
     maxYear: Math.round(maxYear),
   };
+}
+
+/**
+ * Dynamically derives the `[minYear, maxYear]` window strictly from the records present in a dataset bundle
+ * (or returns the O(1) cached bounds of the active merged data layer when omitted).
+ */
+export function computeDatasetYearBounds(
+  bundle?: Partial<AtlasImportBundle> | null,
+): { minYear: number; maxYear: number } | null {
+  if (!bundle) {
+    return getCachedActiveLayer().bounds;
+  }
+  return computeBoundsFromLists(
+    bundle.polities || [],
+    bundle.territories || [],
+    bundle.populationNodes || [],
+    bundle.nightLightNodes || [],
+    bundle.transportRoutes || [],
+    bundle.speciesDiscoveries || [],
+    bundle.mortalityCatastrophes || [],
+    bundle.spaceMissions || [],
+    bundle.customEvents || [],
+  );
 }
 
 export function getAtlasDatasetPresets(): AtlasDatasetPreset[] {

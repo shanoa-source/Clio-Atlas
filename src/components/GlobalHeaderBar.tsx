@@ -29,7 +29,10 @@ interface GlobalHeaderBarProps {
   activeLayers: OverlayLayerId[];
   projectionMode: ProjectionMode;
   spaceStage: SpaceStage;
-  hoverCoords: [number, number] | null;
+  hoverCoords?: [number, number] | null;
+  subscribeHoverCoords?: (
+    listener: (coords: [number, number] | null) => void,
+  ) => () => void;
   onOpenIntro: () => void;
   onToggleLayer: (layerId: OverlayLayerId) => void;
   onClearLayers: () => void;
@@ -96,6 +99,50 @@ function formatCoordPair(
   return `${Math.abs(lat).toFixed(2)}°${ns} · ${Math.abs(lon).toFixed(2)}°${ew}`;
 }
 
+const LiveCoordinateReadout: React.FC<{
+  coordAria: string;
+  deepSpaceCoord: string;
+  spaceStage: SpaceStage;
+  fallbackCoords: [number, number];
+  hoverCoords?: [number, number] | null;
+  subscribeHoverCoords?: (
+    listener: (coords: [number, number] | null) => void,
+  ) => () => void;
+}> = React.memo(
+  ({
+    coordAria,
+    deepSpaceCoord,
+    spaceStage,
+    fallbackCoords,
+    hoverCoords,
+    subscribeHoverCoords,
+  }) => {
+    const [liveCoords, setLiveCoords] = useState<[number, number] | null>(hoverCoords ?? null);
+
+    useEffect(() => {
+      if (!subscribeHoverCoords) return;
+      return subscribeHoverCoords(setLiveCoords);
+    }, [subscribeHoverCoords]);
+
+    const effectiveCoords = subscribeHoverCoords ? liveCoords : (hoverCoords ?? null);
+
+    return (
+      <div
+        aria-label={coordAria}
+        data-testid="coordinate-readout"
+        className="pointer-events-auto flex items-center gap-1.5 h-[38px] px-2.5 sm:px-3 rounded-lg atlas-chassis atlas-reticle shrink-0"
+      >
+        <Crosshair className="w-3.5 h-3.5 text-sky-400/90 shrink-0" aria-hidden="true" />
+        <span className="text-[11px] font-mono tabular-nums text-slate-200 tracking-wide whitespace-nowrap">
+          {spaceStage === 'earth'
+            ? formatCoordPair(effectiveCoords, fallbackCoords)
+            : deepSpaceCoord}
+        </span>
+      </div>
+    );
+  },
+);
+
 export const GlobalHeaderBar: React.FC<GlobalHeaderBarProps> = ({
   language,
   onChangeLanguage,
@@ -104,6 +151,7 @@ export const GlobalHeaderBar: React.FC<GlobalHeaderBarProps> = ({
   projectionMode,
   spaceStage,
   hoverCoords,
+  subscribeHoverCoords,
   onOpenIntro,
   onToggleLayer,
   onClearLayers,
@@ -163,16 +211,14 @@ export const GlobalHeaderBar: React.FC<GlobalHeaderBarProps> = ({
   return (
     <header className="pointer-events-none fixed top-3 inset-x-3 sm:inset-x-4 z-30 flex items-center justify-between gap-2">
       {/* Top-Left: Pure Live Geodesic Latitude/Longitude Readout Only */}
-      <div
-        aria-label={ui.coordAria}
-        data-testid="coordinate-readout"
-        className="pointer-events-auto flex items-center gap-1.5 h-[38px] px-2.5 sm:px-3 rounded-lg atlas-chassis atlas-reticle shrink-0"
-      >
-        <Crosshair className="w-3.5 h-3.5 text-sky-400/90 shrink-0" aria-hidden="true" />
-        <span className="text-[11px] font-mono tabular-nums text-slate-200 tracking-wide whitespace-nowrap">
-          {spaceStage === 'earth' ? formatCoordPair(hoverCoords, fallbackCoords) : ui.deepSpaceCoord}
-        </span>
-      </div>
+      <LiveCoordinateReadout
+        coordAria={ui.coordAria}
+        deepSpaceCoord={ui.deepSpaceCoord}
+        spaceStage={spaceStage}
+        fallbackCoords={fallbackCoords}
+        hoverCoords={hoverCoords}
+        subscribeHoverCoords={subscribeHoverCoords}
+      />
 
       {/* Top-Right: Unified Flush-Segmented Aerospace Command Console */}
       <div className="pointer-events-auto flex items-center h-[38px] px-1 rounded-lg atlas-chassis atlas-reticle shrink-0">

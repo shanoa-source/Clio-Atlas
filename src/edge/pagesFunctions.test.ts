@@ -102,8 +102,28 @@ test('Cloudflare Pages Functions (functions/, src/edge/, src/shared/) contain ze
     }
   }
 
-  // Verify Cloudflare Pages routing & Wrangler configuration files exist
-  assert.equal(fs.existsSync(path.join(rootDir, 'wrangler.toml')), true);
+  // Verify Cloudflare Pages routing & Wrangler configuration files exist and bind real KV namespace IDs
+  const wranglerTomlPath = path.join(rootDir, 'wrangler.toml');
+  assert.equal(fs.existsSync(wranglerTomlPath), true);
+  const wranglerToml = fs.readFileSync(wranglerTomlPath, 'utf8');
+  assert.equal(/REPLACE_WITH_/i.test(wranglerToml), false, 'wrangler.toml must not contain placeholder KV IDs');
+  assert.match(
+    wranglerToml,
+    /^\[\[kv_namespaces\]\]\s*\nbinding\s*=\s*"ATLAS_DATA_KV"\s*\nid\s*=\s*"25cf4a612fea487a94ba54ab0e927229"/m,
+  );
+  assert.match(
+    wranglerToml,
+    /^\[\[kv_namespaces\]\]\s*\nbinding\s*=\s*"OSM_CACHE_KV"\s*\nid\s*=\s*"8db9692e8e754b119604ef1e2d3cdd19"/m,
+  );
+  assert.match(
+    wranglerToml,
+    /^\[\[env\.preview\.kv_namespaces\]\]\s*\nbinding\s*=\s*"ATLAS_DATA_KV"\s*\nid\s*=\s*"25cf4a612fea487a94ba54ab0e927229"/m,
+  );
+  assert.match(
+    wranglerToml,
+    /^\[\[env\.preview\.kv_namespaces\]\]\s*\nbinding\s*=\s*"OSM_CACHE_KV"\s*\nid\s*=\s*"8db9692e8e754b119604ef1e2d3cdd19"/m,
+  );
+
   assert.equal(fs.existsSync(path.join(rootDir, 'public', '_routes.json')), true);
   assert.equal(fs.existsSync(path.join(rootDir, 'public', '_redirects')), true);
 
@@ -156,9 +176,13 @@ test('Cloudflare Pages Functions middleware, KV-backed data import/export, overv
   const cfgJson = (await cfgRes.json()) as any;
   assert.deepEqual(cfgJson.books, []);
   assert.deepEqual(cfgJson.customEvents, []);
-  assert.deepEqual(cfgJson.detectedDatasetIds, ['classical_athens', 'roman_principate']);
-  assert.equal(cfgJson.datasetsBundle.territories.length, 20);
-  assert.equal(cfgJson.datasetsBundle.polities.length, 8);
+  assert.deepEqual(cfgJson.detectedDatasetIds, [
+    'classical_athens',
+    'mycenaean_minoan_bronze',
+    'roman_principate',
+  ]);
+  assert.equal(cfgJson.datasetsBundle.territories.length, 24);
+  assert.equal(cfgJson.datasetsBundle.polities.length, 10);
 
   const schemaRes = await onDataSchemaGet(
     createPagesContext(new Request('https://atlas.pages.dev/api/data/schema'), env),
