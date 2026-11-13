@@ -1,4 +1,4 @@
-import { ATHENS_MORTALITY_CATASTROPHES } from '../data/athensClassicalData';
+import { getMortalityCatastrophes } from '../shared/atlasDataLayer';
 import { ThermalSubZone, TimeRangeSelection } from '../types/history';
 import {
   clamp,
@@ -221,7 +221,7 @@ export function computeMortalityThermalPoints(
   const out: ThermalControlPoint[] = [];
 
   if (envelopeOverrideById && envelopeOverrideById.size > 0) {
-    for (const ev of ATHENS_MORTALITY_CATASTROPHES) {
+    for (const ev of getMortalityCatastrophes()) {
       const animEnv = envelopeOverrideById.get(ev.id) ?? 0;
       if (animEnv <= 0.01) continue;
       const baseMag = deathsToMortalityMagnitude(ev.estimatedDeaths);

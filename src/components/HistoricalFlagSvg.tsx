@@ -1,8 +1,12 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { sanitizeInlineFlagSvg } from '../shared/dataValidator';
 import { AppLanguage, FlagVariantId } from '../types/history';
 
 interface HistoricalFlagSvgProps {
-  flagId: FlagVariantId;
+  flagId?: FlagVariantId;
+  flagSvg?: string;
+  flagAsset?: string;
+  label?: string;
   className?: string;
   language?: AppLanguage;
 }
@@ -36,31 +40,88 @@ const FLAG_ARIA_LABELS: Record<FlagVariantId, Record<AppLanguage, string>> = {
 };
 
 /**
- * 基于维基共享资源古典希腊纹章与雅典四德拉克马银币（Athenian Owl Tetradrachm / Hoplite Episema）考据复原的历史徽旗 SVG
+ * Extensible historical flag & standard renderer:
+ * 1. Sanitized inline `flagSvg` (custom SVG vexillum / emblem)
+ * 2. External or data-URI `flagAsset` with resilient SVG fallback
+ * 3. Five built-in Classical preset emblems (`FlagVariantId`)
  */
 export const HistoricalFlagSvg: React.FC<HistoricalFlagSvgProps> = ({
   flagId,
+  flagSvg,
+  flagAsset,
+  label,
   className = 'w-14 h-9',
   language = 'zh',
 }) => {
-  const ariaLabel = FLAG_ARIA_LABELS[flagId]?.[language] || FLAG_ARIA_LABELS[flagId].zh;
+  const [assetFailed, setAssetFailed] = useState(false);
+
+  useEffect(() => {
+    setAssetFailed(false);
+  }, [flagAsset]);
+
+  const sanitizedCustomSvg = useMemo(() => {
+    if (!flagSvg || typeof flagSvg !== 'string') return null;
+    return sanitizeInlineFlagSvg(flagSvg);
+  }, [flagSvg]);
+
+  const defaultAria =
+    (flagId && (FLAG_ARIA_LABELS[flagId]?.[language] || FLAG_ARIA_LABELS[flagId]?.zh)) ||
+    label ||
+    (language === 'en'
+      ? 'Historical polity standard'
+      : language === 'de'
+        ? 'Historisches Herrschaftsbanner'
+        : '历史政权旗徽');
+
+  if (sanitizedCustomSvg) {
+    return (
+      <span
+        role="img"
+        aria-label={defaultAria}
+        data-flag-mode="svg"
+        className={`inline-flex items-center justify-center overflow-hidden [&>svg]:w-full [&>svg]:h-full ${className}`}
+        dangerouslySetInnerHTML={{ __html: sanitizedCustomSvg }}
+      />
+    );
+  }
+
+  if (flagAsset && !assetFailed) {
+    return (
+      <img
+        src={flagAsset}
+        alt={defaultAria}
+        referrerPolicy="no-referrer"
+        data-flag-mode="asset"
+        onError={() => setAssetFailed(true)}
+        className={`object-cover ${className}`}
+      />
+    );
+  }
 
   switch (flagId) {
     case 'archaic_owl':
       return (
-        <svg
-          viewBox="0 0 90 60"
-          className={className}
-          role="img"
-          aria-label={ariaLabel}
-        >
+        <svg viewBox="0 0 90 60" className={className} role="img" aria-label={defaultAria}>
           <rect width="90" height="60" rx="4" fill="#1E3A8A" />
-          <rect x="3" y="3" width="84" height="54" rx="2" fill="none" stroke="#93C5FD" strokeWidth="1.5" />
-          {/* Olive sprig left */}
-          <path d="M18 44 Q16 28 24 16" fill="none" stroke="#86EFAC" strokeWidth="2" strokeLinecap="round" />
+          <rect
+            x="3"
+            y="3"
+            width="84"
+            height="54"
+            rx="2"
+            fill="none"
+            stroke="#93C5FD"
+            strokeWidth="1.5"
+          />
+          <path
+            d="M18 44 Q16 28 24 16"
+            fill="none"
+            stroke="#86EFAC"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
           <ellipse cx="16" cy="34" rx="4.5" ry="2.2" transform="rotate(-35 16 34)" fill="#86EFAC" />
           <ellipse cx="19" cy="24" rx="4.5" ry="2.2" transform="rotate(-25 19 24)" fill="#86EFAC" />
-          {/* Archaic Athena Owl (Glaux) */}
           <ellipse cx="46" cy="35" rx="11" ry="13" fill="#E2E8F0" />
           <circle cx="46" cy="21" r="9.5" fill="#F8FAFC" />
           <circle cx="42.2" cy="20.5" r="3.4" fill="#0F172A" stroke="#FBBF24" strokeWidth="1.2" />
@@ -75,16 +136,19 @@ export const HistoricalFlagSvg: React.FC<HistoricalFlagSvgProps> = ({
 
     case 'delian_alliance':
       return (
-        <svg
-          viewBox="0 0 90 60"
-          className={className}
-          role="img"
-          aria-label={ariaLabel}
-        >
+        <svg viewBox="0 0 90 60" className={className} role="img" aria-label={defaultAria}>
           <rect width="90" height="60" rx="4" fill="#0369A1" />
           <path d="M0 46 Q22 41 45 46 T90 46 L90 60 L0 60 Z" fill="#0C4A6E" />
-          <rect x="3" y="3" width="84" height="54" rx="2" fill="none" stroke="#7DD3FC" strokeWidth="1.5" />
-          {/* Delian Apollo 8-ray sunburst */}
+          <rect
+            x="3"
+            y="3"
+            width="84"
+            height="54"
+            rx="2"
+            fill="none"
+            stroke="#7DD3FC"
+            strokeWidth="1.5"
+          />
           <g transform="translate(27, 25)">
             <circle cx="0" cy="0" r="6" fill="#FDE047" />
             {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
@@ -100,11 +164,7 @@ export const HistoricalFlagSvg: React.FC<HistoricalFlagSvgProps> = ({
               />
             ))}
           </g>
-          {/* Allied Trireme prow */}
-          <path
-            d="M46 35 L74 35 L79 31 L71 29 L49 29 Z"
-            fill="#F8FAFC"
-          />
+          <path d="M46 35 L74 35 L79 31 L71 29 L49 29 Z" fill="#F8FAFC" />
           <line x1="60" y1="16" x2="60" y2="30" stroke="#FDE68A" strokeWidth="1.8" />
           <path d="M51 19 Q60 15 69 19 L67 27 Q60 25 53 27 Z" fill="#E0F2FE" />
         </svg>
@@ -112,21 +172,22 @@ export const HistoricalFlagSvg: React.FC<HistoricalFlagSvgProps> = ({
 
     case 'imperial_athens':
       return (
-        <svg
-          viewBox="0 0 90 60"
-          className={className}
-          role="img"
-          aria-label={ariaLabel}
-        >
+        <svg viewBox="0 0 90 60" className={className} role="img" aria-label={defaultAria}>
           <rect width="90" height="60" rx="4" fill="#312E81" />
-          <rect x="3" y="3" width="84" height="54" rx="2" fill="none" stroke="#FBBF24" strokeWidth="1.8" />
-          {/* Silver Tetradrachm Medallion */}
+          <rect
+            x="3"
+            y="3"
+            width="84"
+            height="54"
+            rx="2"
+            fill="none"
+            stroke="#FBBF24"
+            strokeWidth="1.8"
+          />
           <circle cx="45" cy="30" r="21" fill="#1E1B4B" stroke="#FBBF24" strokeWidth="1.5" />
-          {/* Olive leaves + crescent */}
           <path d="M29 24 Q31 16 36 14" fill="none" stroke="#A7F3D0" strokeWidth="1.6" />
           <ellipse cx="30" cy="19" rx="3.8" ry="1.8" transform="rotate(-35 30 19)" fill="#A7F3D0" />
           <path d="M35 24 A4 4 0 1 1 35 18 A3 3 0 1 0 35 24 Z" fill="#FDE68A" />
-          {/* Golden Owl */}
           <ellipse cx="45" cy="34" rx="8.5" ry="10.5" fill="#FDE68A" />
           <circle cx="45" cy="22" r="7.5" fill="#FEF3C7" />
           <circle cx="42" cy="21.5" r="2.6" fill="#1E1B4B" stroke="#F59E0B" strokeWidth="1" />
@@ -146,22 +207,32 @@ export const HistoricalFlagSvg: React.FC<HistoricalFlagSvgProps> = ({
 
     case 'strategoi_wartime':
       return (
-        <svg
-          viewBox="0 0 90 60"
-          className={className}
-          role="img"
-          aria-label={ariaLabel}
-        >
+        <svg viewBox="0 0 90 60" className={className} role="img" aria-label={defaultAria}>
           <rect width="90" height="60" rx="4" fill="#78350F" />
-          <rect x="3" y="3" width="84" height="54" rx="2" fill="none" stroke="#FBBF24" strokeWidth="1.6" />
-          {/* Aspis Hoplite Shield */}
+          <rect
+            x="3"
+            y="3"
+            width="84"
+            height="54"
+            rx="2"
+            fill="none"
+            stroke="#FBBF24"
+            strokeWidth="1.6"
+          />
           <circle cx="45" cy="30" r="20" fill="#B45309" stroke="#FDE68A" strokeWidth="2.5" />
           <circle cx="45" cy="30" r="15.5" fill="#451A03" stroke="#F59E0B" strokeWidth="1" />
-          {/* Crossed Dory spears & Owl crest */}
           <line x1="33" y1="42" x2="57" y2="18" stroke="#FDE68A" strokeWidth="1.8" />
           <line x1="33" y1="18" x2="57" y2="42" stroke="#FDE68A" strokeWidth="1.8" />
           <circle cx="45" cy="30" r="7" fill="#FBBF24" />
-          <text x="45" y="33" textAnchor="middle" fill="#451A03" fontSize="8" fontWeight="800" fontFamily="serif">
+          <text
+            x="45"
+            y="33"
+            textAnchor="middle"
+            fill="#451A03"
+            fontSize="8"
+            fontWeight="800"
+            fontFamily="serif"
+          >
             ΑΘ
           </text>
         </svg>
@@ -169,15 +240,19 @@ export const HistoricalFlagSvg: React.FC<HistoricalFlagSvgProps> = ({
 
     case 'ionian_siege':
       return (
-        <svg
-          viewBox="0 0 90 60"
-          className={className}
-          role="img"
-          aria-label={ariaLabel}
-        >
+        <svg viewBox="0 0 90 60" className={className} role="img" aria-label={defaultAria}>
           <rect width="90" height="60" rx="4" fill="#7F1D1D" />
-          <rect x="3" y="3" width="84" height="54" rx="2" fill="none" stroke="#FCA5A5" strokeWidth="1.4" strokeDasharray="6 2" />
-          {/* Besieged Walls & Owl */}
+          <rect
+            x="3"
+            y="3"
+            width="84"
+            height="54"
+            rx="2"
+            fill="none"
+            stroke="#FCA5A5"
+            strokeWidth="1.4"
+            strokeDasharray="6 2"
+          />
           <path
             d="M16 47 L16 38 L22 38 L22 42 L28 42 L28 38 L34 38 L34 47 Z"
             fill="#FECACA"
@@ -190,6 +265,30 @@ export const HistoricalFlagSvg: React.FC<HistoricalFlagSvgProps> = ({
           <text x="64" y="44" fill="#FCA5A5" fontSize="8.5" fontWeight="700" fontFamily="serif">
             404
           </text>
+        </svg>
+      );
+
+    default:
+      return (
+        <svg viewBox="0 0 90 60" className={className} role="img" aria-label={defaultAria}>
+          <rect width="90" height="60" rx="4" fill="#0F172A" />
+          <rect
+            x="3"
+            y="3"
+            width="84"
+            height="54"
+            rx="2"
+            fill="none"
+            stroke="#38BDF8"
+            strokeWidth="1.4"
+          />
+          <polygon
+            points="45,12 61,20 58,42 45,49 32,42 29,20"
+            fill="#1E293B"
+            stroke="#7DD3FC"
+            strokeWidth="1.4"
+          />
+          <circle cx="45" cy="30" r="5" fill="#38BDF8" />
         </svg>
       );
   }

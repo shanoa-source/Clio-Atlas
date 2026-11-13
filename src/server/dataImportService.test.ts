@@ -8,6 +8,7 @@ import { createApiApp } from '../../server';
 import { loadExternalDataConfig } from './dataConfigLoader';
 import {
   BUNDLE_COLLECTION_KEYS,
+  discoverBackendDatasetsFromDisk,
   getDataSchemaCatalog,
   importDataToDisk,
   queryImportedData,
@@ -461,7 +462,7 @@ test('Backend Express HTTP endpoints (/api/data/schema, /validate, /import, /exp
           radiusDegLat: 0.28,
           validFrom: 80,
           validTo: 180,
-          densityKeyframes: [[117, 525]],
+          densityKeyframes: [[117, 610]],
           estimatedTotalNote: '高密度多层公寓（Insulae）聚居区',
           noteI18n: {
             zh: '高密度多层公寓（Insulae）聚居区',
@@ -484,7 +485,7 @@ test('Backend Express HTTP endpoints (/api/data/schema, /validate, /import, /exp
           spreadDeg: 0.18,
           validFrom: 103,
           validTo: 190,
-          intensityKeyframes: [[117, 0.95]],
+          intensityKeyframes: [[117, 0.98]],
           description: '保障亚历山大港运粮船队夜间进港的巨型灯塔火光',
           descriptionI18n: {
             zh: '保障亚历山大港运粮船队夜间进港的巨型灯塔火光',
@@ -631,8 +632,8 @@ test('Backend Express HTTP endpoints (/api/data/schema, /validate, /import, /exp
       previewDeJson.overview.activePolityNameZh,
       'Römisches Kaiserreich (Hoher Prinzipat)',
     );
-    assert.equal(previewDeJson.overview.metrics.peakDensityPerKm2, 525);
-    assert.equal(previewDeJson.overview.metrics.peakNightLightPct, 95);
+    assert.equal(previewDeJson.overview.metrics.peakDensityPerKm2, 610);
+    assert.equal(previewDeJson.overview.metrics.peakNightLightPct, 98);
     assert.match(previewDeJson.structuredContext, /Stadtgebiet Rom & Tibermündung/);
     assert.match(previewDeJson.structuredContext, /Leuchtturm am Sechseckhafen von Portus/);
     assert.match(previewDeJson.structuredContext, /Die Getreideversorgung des antiken Rom/);
@@ -642,3 +643,94 @@ test('Backend Express HTTP endpoints (/api/data/schema, /validate, /import, /exp
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('Backend dataset auto-discovery merges all data/datasets/*.json files and exposes them via GET /api/overview-config', async () => {
+  const rootDetection = discoverBackendDatasetsFromDisk(process.cwd());
+  assert.deepEqual(rootDetection.datasetIds, ['classical_athens', 'roman_principate']);
+  assert.equal(rootDetection.mergedBundle.polities.length, 8);
+  assert.equal(rootDetection.mergedBundle.territories.length, 20);
+  assert.equal(rootDetection.mergedBundle.transportRoutes.length, 12);
+
+  // Verify dropping a new dataset JSON file on the backend is auto-detected without frontend changes
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'civ-atlas-backend-ds-'));
+  const datasetsDir = path.join(tempDir, 'data', 'datasets');
+  fs.mkdirSync(datasetsDir, { recursive: true });
+  fs.copyFileSync(
+    path.join(process.cwd(), 'data', 'datasets', 'classical_athens.json'),
+    path.join(datasetsDir, 'classical_athens.json'),
+  );
+  fs.writeFileSync(
+    path.join(datasetsDir, 'eastern_han_probe.json'),
+    JSON.stringify({
+      schemaVersion: '1.0.0',
+      polities: [
+        {
+          id: 'pol_luoyang_100ce',
+          nameZh: '东汉（洛阳永元盛世）',
+          nameEn: 'Eastern Han Empire (Luoyang)',
+          nameDe: 'Östliche Han-Dynastie (Luoyang)',
+          eraSubtitle: '洛阳都城圈与西域都护府重开',
+          startYear: 25,
+          endYear: 189,
+          representativeColor: '#B45309',
+          borderColor: '#FCD34D',
+          flagId: 'imperial_athens',
+          flagLabel: 'E-HAN',
+          capitalName: '洛阳 (Luoyang)',
+          capitalCoords: [112.454, 34.6197],
+          historicalSummary: '《后汉书·郡国志》载河南尹高密度聚落与太学礼制中心。',
+          sourceCitation: 'Book of the Later Han (Hou Hanshu)',
+        },
+      ],
+      territories: [
+        {
+          id: 'terr_henan_yin',
+          polityId: 'pol_luoyang_100ce',
+          nameZh: '河南尹核心辖区',
+          validFrom: 25,
+          validTo: 189,
+          tier: 'metropolis',
+          modernAdminNameEn: 'Luoyang',
+          countryCode: 'CN',
+          adminLevel: 5,
+          osmIds: [],
+          approxBBox: { minLon: 111.8, minLat: 34.1, maxLon: 113.1, maxLat: 35.0 },
+        },
+      ],
+    }),
+    'utf-8',
+  );
+
+  const app = createApiApp({ baseDir: tempDir });
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
+    const srv = app.listen(0, '127.0.0.1', () => resolve(srv));
+  });
+
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const res = await fetch(`http://127.0.0.1:${port}/api/overview-config?lang=zh`);
+    assert.equal(res.status, 200);
+    const json = (await res.json()) as any;
+    assert.deepEqual(json.detectedDatasetIds, ['classical_athens', 'eastern_han_probe']);
+    assert.equal(json.datasetsBundle.polities.length, 6);
+    assert.equal(json.datasetsBundle.territories.length, 13);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('README.md contains trilingual project overview, features, tech stack, Cloudflare deployment, developer contacts, and English-only Privacy Policy', () => {
+  const readmePath = path.join(process.cwd(), 'README.md');
+  assert.equal(fs.existsSync(readmePath), true, 'README.md must exist at repository root');
+  const readme = fs.readFileSync(readmePath, 'utf-8');
+
+  assert.match(readme, /## English/);
+  assert.match(readme, /## 简体中文/);
+  assert.match(readme, /## Deutsch/);
+  assert.match(readme, /Hosted on Cloudflare Pages \/ Workers/);
+  assert.match(readme, /devteamcontact@clioatlas\.org/);
+  assert.match(readme, /https:\/\/github\.com\/shanoa-source/);
+  assert.match(readme, /## Privacy Policy/);
+});
+

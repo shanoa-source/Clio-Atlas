@@ -1,6 +1,13 @@
+import { getTerritoryRegions } from '../shared/atlasDataLayer';
 import {
   AppLanguage,
   CelestialBodySpec,
+  ImportedMortalityCatastropheRecord,
+  ImportedNightLightNodeRecord,
+  ImportedPolityRecord,
+  ImportedPopulationNodeRecord,
+  ImportedSpeciesDiscoveryRecord,
+  ImportedTransportRouteRecord,
   MortalityCatastrophe,
   NightLightNode,
   OverlayLayerId,
@@ -217,6 +224,39 @@ export function localizeNightLightCategory(
 export const UI_TEXT = {
   zh: {
     pageTitle: '文明演进史 · 全球历史时空地理平台',
+    brandShort: '文明演进史',
+    bootAriaLabel: '正在校准三维地球与高精度历史政区地块',
+    bootSubtitle: '全球历史时空地理观测系统',
+    bootStageEngine: '正在校准三维球面矢量引擎',
+    bootStageParcels: '正在同步高精度政区与海岸地块',
+    bootStageDissolve: '正在融合拓扑疆界与渲染地表图层',
+    bootStageReady: '精细政区地块校准完成',
+    bootParcelLabel: '精细地块单元',
+    introNavLabel: '简介',
+    introNavAria: '查看项目简介与隐私政策 (/intro)',
+    aiChannelAria: '配置 AI 接口与 Gemini 模型通道',
+    aiChannelDefaultShort: '默认通道',
+    aiChannelCustomShort: '自定义通道',
+    aiModalTitle: 'AI 接口与 Gemini 模型通道',
+    aiModalSubtitle: '可在平台默认 Gemini 4 Hydrogen 通道与您自己的 API 密钥及模型之间切换',
+    aiModeDefault: '默认服务端通道',
+    aiModeDefaultDesc: '使用服务端默认密钥与 Gemini 4 Hydrogen 模型',
+    aiModeCustom: '自定义 API 与模型',
+    aiModeCustomDesc: '使用您自己的 Gemini API Key、可选网关地址与指定模型',
+    aiApiKeyLabel: '自定义 Gemini API Key',
+    aiApiKeyPlaceholder: '粘贴您的 Gemini API Key（如 AIza...）',
+    aiBaseUrlLabel: '自定义 API 端点 URL（可选）',
+    aiBaseUrlPlaceholder: 'https://generativelanguage.googleapis.com',
+    aiModelPresetLabel: '选择 Gemini 模型',
+    aiModelCustomOption: '手动输入其他 Gemini 模型 ID…',
+    aiModelCustomLabel: '自定义模型 ID',
+    aiModelCustomPlaceholder: '例如 gemini-4-hydrogen 或 gemini-4-argon',
+    aiLocalNotice: '自定义配置保存在当前浏览器本地，对话请求通过服务端代理通道执行。',
+    aiResetBtn: '恢复默认通道',
+    aiSaveBtn: '保存配置',
+    aiErrEmptyKey: '开启自定义通道时请填写您的 Gemini API Key。',
+    aiErrInvalidModel: '请填写有效的 Gemini 模型 ID（不支持已废弃的 1.5 / 2.0 旧版模型）。',
+    aiErrInvalidUrl: '自定义端点地址必须以 https:// 或 http:// 开头。',
     coordAria: '实时地理坐标',
     deepSpaceCoord: '黄道深空天体坐标系',
     layerTriggerDefault: '图层叠加',
@@ -375,6 +415,42 @@ export const UI_TEXT = {
   },
   en: {
     pageTitle: 'Atlas of Civilization · Global Historical GIS Platform',
+    brandShort: 'Atlas of Civilization',
+    bootAriaLabel: 'Calibrating 3D Earth and historical territory parcels',
+    bootSubtitle: 'Global Spatio-Temporal Historical Observatory',
+    bootStageEngine: 'Calibrating 3D Geodesic Vector Engine',
+    bootStageParcels: 'Syncing High-Precision Coastal & Polity Parcels',
+    bootStageDissolve: 'Dissolving Topological Seams & Uploading Tiles',
+    bootStageReady: 'Fine-Grained Parcel Calibration Complete',
+    bootParcelLabel: 'Precision Parcels',
+    introNavLabel: 'Intro',
+    introNavAria: 'Open project overview and privacy policy (/intro)',
+    aiChannelAria: 'Configure AI API and Gemini model channel',
+    aiChannelDefaultShort: 'Default API',
+    aiChannelCustomShort: 'Custom API',
+    aiModalTitle: 'AI API & Gemini Model Channel',
+    aiModalSubtitle:
+      'Switch between the default server Gemini 4 Hydrogen channel and your own Gemini API key & model',
+    aiModeDefault: 'Default Server Channel',
+    aiModeDefaultDesc: 'Uses server credentials with Gemini 4 Hydrogen by default',
+    aiModeCustom: 'Custom API & Model',
+    aiModeCustomDesc: 'Use your own Gemini API key, optional base URL, and selected model',
+    aiApiKeyLabel: 'Custom Gemini API Key',
+    aiApiKeyPlaceholder: 'Paste your Gemini API Key (e.g. AIza...)',
+    aiBaseUrlLabel: 'Custom API Base URL (Optional)',
+    aiBaseUrlPlaceholder: 'https://generativelanguage.googleapis.com',
+    aiModelPresetLabel: 'Select Gemini Model',
+    aiModelCustomOption: 'Enter custom Gemini model ID…',
+    aiModelCustomLabel: 'Custom Model ID',
+    aiModelCustomPlaceholder: 'e.g. gemini-4-hydrogen or gemini-4-argon',
+    aiLocalNotice:
+      'Saved locally in your browser and routed securely through the server API endpoint.',
+    aiResetBtn: 'Reset to Default',
+    aiSaveBtn: 'Save Channel',
+    aiErrEmptyKey: 'Please enter your Gemini API Key when using the custom channel.',
+    aiErrInvalidModel:
+      'Enter a valid active Gemini model ID (deprecated 1.5 / 2.0 models are unsupported).',
+    aiErrInvalidUrl: 'Custom Base URL must start with https:// or http://.',
     coordAria: 'Live Geographic Coordinates',
     deepSpaceCoord: 'Ecliptic Deep-Space Frame',
     layerTriggerDefault: 'Layers',
@@ -533,6 +609,42 @@ export const UI_TEXT = {
   },
   de: {
     pageTitle: 'Atlas der Zivilisationen · Historische Geo-Plattform',
+    brandShort: 'Atlas der Zivilisationen',
+    bootAriaLabel: '3D-Globus und historische Gebiete werden kalibriert',
+    bootSubtitle: 'Globales Historisches Raum-Zeit-Observatorium',
+    bootStageEngine: '3D-Geodäsie-Vektor-Engine wird kalibriert',
+    bootStageParcels: 'Hochpräzise Küsten- & Herrschaftsparzellen laden',
+    bootStageDissolve: 'Topologische Grenzen verschmelzen & GPU-Upload',
+    bootStageReady: 'Feinparzellen-Kalibrierung abgeschlossen',
+    bootParcelLabel: 'Präzisionsparzellen',
+    introNavLabel: 'Info',
+    introNavAria: 'Projektübersicht und Privacy Policy öffnen (/intro)',
+    aiChannelAria: 'KI-API- und Gemini-Modellkanal konfigurieren',
+    aiChannelDefaultShort: 'Standard-API',
+    aiChannelCustomShort: 'Eigene API',
+    aiModalTitle: 'KI-API & Gemini-Modellkanal',
+    aiModalSubtitle:
+      'Wechseln Sie zwischen dem Standard-Serverkanal (Gemini 4 Hydrogen) und Ihrem eigenen API-Schlüssel & Modell',
+    aiModeDefault: 'Standard-Serverkanal',
+    aiModeDefaultDesc: 'Nutzt Server-Zugangsdaten mit Standardmodell Gemini 4 Hydrogen',
+    aiModeCustom: 'Eigene API & Modell',
+    aiModeCustomDesc: 'Eigenen Gemini-API-Schlüssel, optionale Basis-URL und Modell verwenden',
+    aiApiKeyLabel: 'Eigener Gemini-API-Schlüssel',
+    aiApiKeyPlaceholder: 'Gemini-API-Schlüssel einfügen (z. B. AIza...)',
+    aiBaseUrlLabel: 'Eigene API-Basis-URL (Optional)',
+    aiBaseUrlPlaceholder: 'https://generativelanguage.googleapis.com',
+    aiModelPresetLabel: 'Gemini-Modell auswählen',
+    aiModelCustomOption: 'Andere Gemini-Modell-ID eingeben…',
+    aiModelCustomLabel: 'Benutzerdefinierte Modell-ID',
+    aiModelCustomPlaceholder: 'z. B. gemini-4-hydrogen oder gemini-4-argon',
+    aiLocalNotice:
+      'Wird lokal im Browser gespeichert und über den Server-Endpunkt weitergeleitet.',
+    aiResetBtn: 'Standard wiederherstellen',
+    aiSaveBtn: 'Speichern',
+    aiErrEmptyKey: 'Bitte geben Sie für den eigenen Kanal Ihren Gemini-API-Schlüssel ein.',
+    aiErrInvalidModel:
+      'Gültige aktive Gemini-Modell-ID eingeben (veraltete 1.5 / 2.0 Modelle nicht unterstützt).',
+    aiErrInvalidUrl: 'Die Basis-URL muss mit https:// oder http:// beginnen.',
     coordAria: 'Aktuelle Geokoordinaten',
     deepSpaceCoord: 'Ekliptikales Tiefraumsystem',
     layerTriggerDefault: 'Ebenen',
@@ -785,31 +897,28 @@ export function localizePolity(
   phase: PolityPhase,
   lang: AppLanguage,
 ): { name: string; secondaryName: string; eraSubtitle: string; capitalName: string; summary: string } {
+  const rec = phase as ImportedPolityRecord;
   if (lang === 'zh') {
     return {
-      name: phase.nameZh,
-      secondaryName: phase.nameEn,
-      eraSubtitle: phase.eraSubtitle,
-      capitalName: phase.capitalName,
-      summary: phase.historicalSummary,
+      name: rec.nameZh,
+      secondaryName: rec.nameEn,
+      eraSubtitle: rec.eraSubtitleI18n?.zh || rec.eraSubtitle,
+      capitalName: rec.capitalNameI18n?.zh || rec.capitalName,
+      summary: rec.summaryI18n?.zh || rec.historicalSummary,
     };
   }
+  const embeddedName = lang === 'de' ? rec.nameDe || rec.nameEn : rec.nameEn;
+  const embeddedEra = rec.eraSubtitleI18n?.[lang];
+  const embeddedCap = rec.capitalNameI18n?.[lang];
+  const embeddedSum = rec.summaryI18n?.[lang];
   const t = POLITY_I18N[phase.id]?.[lang];
-  if (!t) {
-    return {
-      name: phase.nameEn,
-      secondaryName: phase.nameZh,
-      eraSubtitle: phase.eraSubtitle,
-      capitalName: phase.capitalName,
-      summary: phase.historicalSummary,
-    };
-  }
+
   return {
-    name: t.name,
+    name: (lang === 'de' && rec.nameDe ? rec.nameDe : t?.name) || embeddedName || phase.nameZh,
     secondaryName: lang === 'de' ? phase.nameEn : phase.nameZh,
-    eraSubtitle: t.eraSubtitle,
-    capitalName: t.capitalName,
-    summary: t.summary,
+    eraSubtitle: embeddedEra || t?.eraSubtitle || phase.eraSubtitle,
+    capitalName: embeddedCap || t?.capitalName || phase.capitalName,
+    summary: embeddedSum || t?.summary || phase.historicalSummary,
   };
 }
 
@@ -869,7 +978,14 @@ export function localizeTerritoryName(
   fallbackZh: string,
   lang: AppLanguage,
 ): string {
-  if (lang === 'zh' || !territoryId) return fallbackZh;
+  if (!territoryId) return fallbackZh;
+  const matched = getTerritoryRegions().find((t) => t.id === territoryId);
+  if (lang === 'zh') {
+    return matched?.nameI18n?.zh || matched?.nameZh || fallbackZh;
+  }
+  if (matched?.nameI18n?.[lang]) {
+    return matched.nameI18n[lang]!;
+  }
   return TERRITORY_NAME_I18N[territoryId]?.[lang] ?? fallbackZh;
 }
 
@@ -960,8 +1076,18 @@ export function localizePopulationNode(
   node: PopulationDensityNode,
   lang: AppLanguage,
 ): { name: string; note: string } {
-  if (lang === 'zh') return { name: node.nameZh, note: node.estimatedTotalNote };
-  return POP_NODE_I18N[node.id]?.[lang] ?? { name: node.nameZh, note: node.estimatedTotalNote };
+  const rec = node as ImportedPopulationNodeRecord;
+  if (lang === 'zh') {
+    return {
+      name: rec.nameI18n?.zh || node.nameZh,
+      note: rec.noteI18n?.zh || node.estimatedTotalNote,
+    };
+  }
+  const t = POP_NODE_I18N[node.id]?.[lang];
+  return {
+    name: rec.nameI18n?.[lang] || t?.name || node.nameZh,
+    note: rec.noteI18n?.[lang] || t?.note || node.estimatedTotalNote,
+  };
 }
 
 const NIGHT_LIGHT_I18N: Record<string, Record<'en' | 'de', { name: string; description: string }>> =
@@ -1056,15 +1182,20 @@ export function localizeNightLightNode(
   node: NightLightNode,
   lang: AppLanguage,
 ): { name: string; categoryLabel: string; description: string } {
+  const rec = node as ImportedNightLightNodeRecord;
   const categoryLabel = localizeNightLightCategory(node.category, lang);
   if (lang === 'zh') {
-    return { name: node.nameZh, categoryLabel, description: node.description };
+    return {
+      name: rec.nameI18n?.zh || node.nameZh,
+      categoryLabel,
+      description: rec.descriptionI18n?.zh || node.description,
+    };
   }
   const t = NIGHT_LIGHT_I18N[node.id]?.[lang];
   return {
-    name: t?.name ?? node.nameZh,
+    name: rec.nameI18n?.[lang] || t?.name || node.nameZh,
     categoryLabel,
-    description: t?.description ?? node.description,
+    description: rec.descriptionI18n?.[lang] || t?.description || node.description,
   };
 }
 
@@ -1176,23 +1307,22 @@ export function localizeTransportRoute(
   route: TransportRoute,
   lang: AppLanguage,
 ): { name: string; origin: string; destination: string; cargo: string } {
+  const rec = route as ImportedTransportRouteRecord;
   if (lang === 'zh') {
     return {
-      name: route.nameZh,
-      origin: route.originName,
-      destination: route.destinationName,
-      cargo: route.cargoSummary,
+      name: rec.nameI18n?.zh || route.nameZh,
+      origin: rec.originNameI18n?.zh || route.originName,
+      destination: rec.destinationNameI18n?.zh || route.destinationName,
+      cargo: rec.cargoSummaryI18n?.zh || route.cargoSummary,
     };
   }
   const t = ROUTE_I18N[route.id]?.[lang];
-  return (
-    t ?? {
-      name: route.nameZh,
-      origin: route.originName,
-      destination: route.destinationName,
-      cargo: route.cargoSummary,
-    }
-  );
+  return {
+    name: rec.nameI18n?.[lang] || t?.name || route.nameZh,
+    origin: rec.originNameI18n?.[lang] || t?.origin || route.originName,
+    destination: rec.destinationNameI18n?.[lang] || t?.destination || route.destinationName,
+    cargo: rec.cargoSummaryI18n?.[lang] || t?.cargo || route.cargoSummary,
+  };
 }
 
 const SPECIES_I18N: Record<
@@ -1303,23 +1433,22 @@ export function localizeSpecies(
   sp: SpeciesDiscovery,
   lang: AppLanguage,
 ): { commonName: string; discoverer: string; location: string; note: string } {
+  const rec = sp as ImportedSpeciesDiscoveryRecord;
   if (lang === 'zh') {
     return {
-      commonName: sp.commonNameZh,
-      discoverer: sp.discovererZh,
-      location: sp.locationNameZh,
-      note: sp.historicalNote,
+      commonName: rec.commonNameI18n?.zh || sp.commonNameZh,
+      discoverer: rec.discovererI18n?.zh || sp.discovererZh,
+      location: rec.locationNameI18n?.zh || sp.locationNameZh,
+      note: rec.historicalNoteI18n?.zh || sp.historicalNote,
     };
   }
   const t = SPECIES_I18N[sp.id]?.[lang];
-  return (
-    t ?? {
-      commonName: sp.commonNameZh,
-      discoverer: sp.discovererEn,
-      location: sp.locationNameZh,
-      note: sp.historicalNote,
-    }
-  );
+  return {
+    commonName: rec.commonNameI18n?.[lang] || t?.commonName || sp.commonNameZh,
+    discoverer: rec.discovererI18n?.[lang] || t?.discoverer || sp.discovererEn,
+    location: rec.locationNameI18n?.[lang] || t?.location || sp.locationNameZh,
+    note: rec.historicalNoteI18n?.[lang] || t?.note || sp.historicalNote,
+  };
 }
 
 const CATASTROPHE_I18N: Record<
@@ -1416,6 +1545,7 @@ export function localizeCatastrophe(
   cat: MortalityCatastrophe,
   lang: AppLanguage,
 ): { name: string; categoryLabel: string; location: string; note: string } {
+  const rec = cat as ImportedMortalityCatastropheRecord;
   const categoryLabel =
     lang === 'zh'
       ? cat.causeCategory === 'plague'
@@ -1437,18 +1567,18 @@ export function localizeCatastrophe(
 
   if (lang === 'zh') {
     return {
-      name: cat.nameZh,
+      name: rec.nameI18n?.zh || cat.nameZh,
       categoryLabel,
-      location: cat.locationNameZh,
-      note: cat.historicalNote,
+      location: rec.locationNameI18n?.zh || cat.locationNameZh,
+      note: rec.historicalNoteI18n?.zh || cat.historicalNote,
     };
   }
   const t = CATASTROPHE_I18N[cat.id]?.[lang];
   return {
-    name: t?.name ?? cat.nameZh,
+    name: rec.nameI18n?.[lang] || t?.name || cat.nameZh,
     categoryLabel,
-    location: t?.location ?? cat.locationNameZh,
-    note: t?.note ?? cat.historicalNote,
+    location: rec.locationNameI18n?.[lang] || t?.location || cat.locationNameZh,
+    note: rec.historicalNoteI18n?.[lang] || t?.note || cat.historicalNote,
   };
 }
 

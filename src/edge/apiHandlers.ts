@@ -5,6 +5,11 @@ import {
   normalizeAppLanguage,
 } from '../i18n/translations';
 import {
+  computeDatasetYearBounds,
+  getAtlasDatasetPresets,
+  getBackendDetectedDatasetSummary,
+} from '../shared/atlasDataLayer';
+import {
   BUNDLE_COLLECTION_KEYS,
   BundleCollectionKey,
   filterSnapshotData,
@@ -111,10 +116,56 @@ function parseOptionalFloat(val: string | null): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function createEdgeGeminiClient(apiKey: string): GoogleGenAI {
+export const DEFAULT_GEMINI_MODEL = 'gemini-4-hydrogen';
+
+const DEPRECATED_GEMINI_MODEL_PATTERN =
+  /^(gemini-1\.5(?:-|$)|gemini-2\.0(?:-|$)|gemini-pro$)/i;
+
+const GEMINI_MODEL_ALIASES: Record<string, string> = {
+  'gemini flash': 'gemini-4-hydrogen',
+  'gemini 4 flash': 'gemini-4-hydrogen',
+  'gemini hydrogen': 'gemini-4-hydrogen',
+  'gemini 4 hydrogen': 'gemini-4-hydrogen',
+  'gemini-4-hydrogen': 'gemini-4-hydrogen',
+  'gemini lite': 'gemini-3.1-flash-lite',
+  'flash lite': 'gemini-3.1-flash-lite',
+  'gemini 3.1 flash lite': 'gemini-3.1-flash-lite',
+  'gemini-3.1-flash-lite': 'gemini-3.1-flash-lite',
+  'gemini carbon': 'gemini-4-carbon',
+  'gemini 4 carbon': 'gemini-4-carbon',
+  'gemini-4-carbon': 'gemini-4-carbon',
+  'gemini pro': 'gemini-4-argon',
+  'gemini 4': 'gemini-4-argon',
+  'gemini argon': 'gemini-4-argon',
+  'gemini 4 argon': 'gemini-4-argon',
+  'gemini-4-argon': 'gemini-4-argon',
+};
+
+export function normalizeRequestedGeminiModel(
+  rawModel: unknown,
+): { ok: true; model: string } | { ok: false; reason: 'deprecated' | 'invalid' } {
+  if (typeof rawModel !== 'string' || !rawModel.trim()) {
+    return { ok: true, model: DEFAULT_GEMINI_MODEL };
+  }
+  const trimmed = rawModel.trim();
+  const lower = trimmed.toLowerCase().replace(/\s+/g, ' ');
+  if (GEMINI_MODEL_ALIASES[lower]) {
+    return { ok: true, model: GEMINI_MODEL_ALIASES[lower] };
+  }
+  if (DEPRECATED_GEMINI_MODEL_PATTERN.test(trimmed)) {
+    return { ok: false, reason: 'deprecated' };
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{1,95}$/.test(trimmed)) {
+    return { ok: false, reason: 'invalid' };
+  }
+  return { ok: true, model: trimmed };
+}
+
+function createEdgeGeminiClient(apiKey: string, baseUrl?: string): GoogleGenAI {
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
+      ...(baseUrl ? { baseUrl } : {}),
       headers: {
         'User-Agent': 'aistudio-build',
       },
@@ -133,8 +184,17 @@ export async function handleOverviewConfigRequest(
   const url = new URL(request.url);
   const lang = normalizeAppLanguage(url.searchParams.get('lang') ?? undefined);
   const snapshot = await storage.getSnapshot();
+  const detected = storage.getDetectedDatasets
+    ? await storage.getDetectedDatasets()
+    : getBackendDetectedDatasetSummary();
   const { books, customEvents, bundle } = resolveExternalConfigFromSnapshot(snapshot, lang);
-  return jsonResponse({ books, customEvents, bundle });
+  return jsonResponse({
+    books,
+    customEvents,
+    bundle,
+    detectedDatasetIds: detected.datasetIds,
+    datasetsBundle: detected.mergedBundle,
+  });
 }
 
 /**
@@ -278,10 +338,12 @@ export async function handleOverviewPreviewRequest(
 ): Promise<Response> {
   const body = (await safeParseJsonBody(request)) ?? {};
   const language: AppLanguage = normalizeAppLanguage(body.language);
+  const defaultYear =
+    getAtlasDatasetPresets()[0]?.defaultYear ?? computeDatasetYearBounds()?.minYear ?? 1;
   const currentYear =
     typeof body.currentYear === 'number' && Number.isFinite(body.currentYear)
       ? Math.round(body.currentYear)
-      : -454;
+      : defaultYear;
   const selectedRange: TimeRangeSelection =
     Array.isArray(body.selectedRange) &&
     body.selectedRange.length === 2 &&
@@ -324,6 +386,9 @@ export async function handleOverviewPreviewRequest(
 export interface ChatHandlerOptions {
   generateReplyFn?: (params: {
     apiKey: string;
+    baseUrl?: string;
+    model: string;
+    channelMode: 'default' | 'custom';
     systemInstruction: string;
     contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>;
   }) => Promise<string>;
@@ -354,21 +419,85 @@ export async function handleChatRequest(
       return jsonResponse({ error: emptyErr }, 400);
     }
 
-    const apiKey = typeof env.GEMINI_API_KEY === 'string' ? env.GEMINI_API_KEY.trim() : '';
-    if (!apiKey) {
-      const keyErr =
-        language === 'en'
-          ? 'GEMINI_API_KEY is missing on the server. Configure GEMINI_API_KEY in Cloudflare Pages Secrets (or Settings > Secrets in AI Studio).'
-          : language === 'de'
-            ? 'GEMINI_API_KEY fehlt auf dem Server. Bitte konfigurieren Sie GEMINI_API_KEY in den Cloudflare Pages Secrets (oder Settings > Secrets).'
-            : '服务端未检测到 GEMINI_API_KEY，请在 Cloudflare Pages 环境变量 Secrets（或 AI Studio Settings > Secrets）中配置密钥。';
-      return jsonResponse({ error: keyErr }, 503);
+    const rawAiConfig =
+      body?.aiConfig && typeof body.aiConfig === 'object' ? body.aiConfig : null;
+    const channelMode: 'default' | 'custom' =
+      rawAiConfig?.mode === 'custom' ? 'custom' : 'default';
+
+    const requestedModelCheck =
+      channelMode === 'custom'
+        ? normalizeRequestedGeminiModel(rawAiConfig?.model)
+        : { ok: true as const, model: DEFAULT_GEMINI_MODEL };
+
+    if (!requestedModelCheck.ok) {
+      const modelErr =
+        requestedModelCheck.reason === 'deprecated'
+          ? language === 'en'
+            ? 'This legacy Gemini model is deprecated and unsupported. Please choose Gemini 4 Hydrogen, Gemini 4 Argon, Gemini 4 Carbon, or Gemini 3.1 Flash Lite.'
+            : language === 'de'
+              ? 'Dieses ältere Gemini-Modell wird nicht mehr unterstützt. Bitte wählen Sie Gemini 4 Hydrogen, Gemini 4 Argon, Gemini 4 Carbon oder Gemini 3.1 Flash Lite.'
+              : '该旧版 Gemini 模型已废弃且不再支持，请切换为 Gemini 4 Hydrogen、Gemini 4 Argon、Gemini 4 Carbon 或 Gemini 3.1 Flash Lite。'
+          : language === 'en'
+            ? 'Invalid Gemini model identifier format.'
+            : language === 'de'
+              ? 'Ungültiges Gemini-Modellformat.'
+              : '自定义 Gemini 模型名称格式无效。';
+      return jsonResponse({ error: modelErr }, 400);
     }
 
+    const effectiveModel = requestedModelCheck.model;
+
+    let effectiveBaseUrl: string | undefined;
+    if (channelMode === 'custom' && typeof rawAiConfig?.baseUrl === 'string') {
+      const trimmedUrl = rawAiConfig.baseUrl.trim();
+      if (trimmedUrl) {
+        try {
+          const parsedUrl = new URL(trimmedUrl);
+          if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+            throw new Error('protocol');
+          }
+          effectiveBaseUrl = trimmedUrl.replace(/\/+$/, '');
+        } catch {
+          const urlErr =
+            language === 'en'
+              ? 'Invalid custom API Base URL. Must start with https:// or http://.'
+              : language === 'de'
+                ? 'Ungültige benutzerdefinierte API-Basis-URL. Muss mit https:// oder http:// beginnen.'
+                : '自定义 API 端点地址无效，请填写以 https:// 或 http:// 开头的完整 URL。';
+          return jsonResponse({ error: urlErr }, 400);
+        }
+      }
+    }
+
+    const serverApiKey = typeof env.GEMINI_API_KEY === 'string' ? env.GEMINI_API_KEY.trim() : '';
+    const customApiKey =
+      channelMode === 'custom' && typeof rawAiConfig?.apiKey === 'string'
+        ? rawAiConfig.apiKey.trim()
+        : '';
+    const apiKey = channelMode === 'custom' ? customApiKey || serverApiKey : serverApiKey;
+
+    if (!apiKey) {
+      const keyErr =
+        channelMode === 'custom'
+          ? language === 'en'
+            ? 'Custom channel has no API key provided and server GEMINI_API_KEY is unset. Enter your Gemini API key in the AI Channel panel.'
+            : language === 'de'
+              ? 'Für den benutzerdefinierten Kanal wurde kein API-Schlüssel angegeben und GEMINI_API_KEY fehlt auf dem Server.'
+              : '自定义通道未填写 API Key 且服务端未配置默认密钥，请在 AI 模型通道配置中填入您的 Gemini API Key。'
+          : language === 'en'
+            ? 'GEMINI_API_KEY is missing on the server. Configure GEMINI_API_KEY in Cloudflare Pages Secrets, or switch to Custom API & Model channel.'
+            : language === 'de'
+              ? 'GEMINI_API_KEY fehlt auf dem Server. Konfigurieren Sie die Secrets oder wechseln Sie zum benutzerdefinierten API-Kanal.'
+              : '服务端未检测到默认 GEMINI_API_KEY，请在服务端环境变量中配置密钥，或在右上角切换至「自定义 API 与模型通道」。';
+      return jsonResponse({ error: keyErr }, channelMode === 'custom' ? 400 : 503);
+    }
+
+    const defaultYear =
+      getAtlasDatasetPresets()[0]?.defaultYear ?? computeDatasetYearBounds()?.minYear ?? 1;
     const currentYear =
       typeof mapState.currentYear === 'number' && Number.isFinite(mapState.currentYear)
         ? Math.round(mapState.currentYear)
-        : -454;
+        : defaultYear;
 
     const selectedRange: TimeRangeSelection =
       Array.isArray(mapState.selectedRange) &&
@@ -419,12 +548,12 @@ export async function handleChatRequest(
         : '1. Spatial & Temporal Boundary: No specific region is selected; answer around the [Global Timeline Year/Interval] in the context below.';
       const layerCorrelationRule =
         activeLayers.length > 0
-          ? `2. Overlaid Layer Correlation (Critical): The user has overlaid [${overlaidLabels}]. Your analysis MUST be strongly correlated with [${overlaidLabels}], centering on their quantitative metrics, spatial gradients, and cross-layer coupling (e.g., when Population Density + Nighttime Lights are overlaid together, contrast settlement densities in pers./km² with urban oil lamps, harbor beacons, and Laurion 24h silver smelting furnaces).`
-          : `2. Layer Focus: Only the baseline [${baseLayerLabel}] layer is active; focus on polity evolution, League territories, and major historical events.`;
+          ? `2. Overlaid Layer Correlation (Critical): The user has overlaid [${overlaidLabels}]. Your analysis MUST be strongly correlated with [${overlaidLabels}], centering on their quantitative metrics, spatial gradients, and cross-layer coupling (e.g., when Population Density + Nighttime Lights are overlaid together, contrast settlement densities in pers./km² with urban oil lamps, harbor beacons, and 24h smelting furnaces).`
+          : `2. Layer Focus: Only the baseline [${baseLayerLabel}] layer is active; focus on polity evolution, provincial/league territories, and major historical events.`;
       const styleRule =
         '3. Language & Style: You MUST respond strictly in English. Cite exact years, locations, quantitative figures, and primary sources concisely (around 150–260 words unless asked for more).';
       baseInstruction = [
-        'You are a rigorous scholar of historical geography and Classical Mediterranean civilizations.',
+        'You are a rigorous scholar of historical geography and Classical civilizations.',
         spatialScopeRule,
         layerCorrelationRule,
         styleRule,
@@ -436,12 +565,12 @@ export async function handleChatRequest(
         : '1. Räumliche & Zeitliche Eingrenzung: Kein Teilgebiet ist ausgewählt; antworten Sie bezogen auf das [Globale Zeitleistenjahr / Zeitraum] im Kontext unten.';
       const layerCorrelationRule =
         activeLayers.length > 0
-          ? `2. Strikte Ebenenkorrelation (Kernanforderung): Der Nutzer hat [${overlaidLabels}] überlagert. Ihre Analyse MUSS eng mit [${overlaidLabels}] verknüpft sein und deren Messwerte, räumliche Gradienten sowie Wechselwirkungen in den Mittelpunkt stellen (z. B. bei Bevölkerungsdichte + Nachtbeleuchtung: Zusammenhang zwischen Einw./km², städtischen Öllampen, Hafenleuchtfeuern und 24h-Silberschmelzöfen in Laurion).`
-          : `2. Ebenen-Fokus: Nur die Basisebene [${baseLayerLabel}] ist aktiv; fokussieren Sie sich auf Herrschaftsphasen, Seebund-Gebiete und zentrale Ereignisse.`;
+          ? `2. Strikte Ebenenkorrelation (Kernanforderung): Der Nutzer hat [${overlaidLabels}] überlagert. Ihre Analyse MUSS eng mit [${overlaidLabels}] verknüpft sein und deren Messwerte, räumliche Gradienten sowie Wechselwirkungen in den Mittelpunkt stellen (z. B. bei Bevölkerungsdichte + Nachtbeleuchtung: Zusammenhang zwischen Einw./km², städtischen Öllampen, Hafenleuchtfeuern und 24h-Schmelzöfen).`
+          : `2. Ebenen-Fokus: Nur die Basisebene [${baseLayerLabel}] ist aktiv; fokussieren Sie sich auf Herrschaftsphasen, Provinzen/Bündnisgebiete und zentrale Ereignisse.`;
       const styleRule =
         '3. Sprache & Stil: Antworten Sie AUSSCHLIESSLICH auf Deutsch. Zitieren Sie präzise Jahreszahlen, Orte, Messwerte und antike Quellen klar und prägnant (ca. 150–260 Wörter, sofern nicht ausführlicher gewünscht).';
       baseInstruction = [
-        'Sie sind ein präziser Historiker für Historische Geographie und die klassische Antike.',
+        'Sie sind ein präziser Historiker für Historische Geographie und antike Zivilisationen.',
         spatialScopeRule,
         layerCorrelationRule,
         styleRule,
@@ -453,12 +582,12 @@ export async function handleChatRequest(
         : '1. 空间与时间边界约束：当前用户未框选特定区域，请严格围绕下方上下文中的【当前全局时间轴年份/时间段】作答。';
       const layerCorrelationRule =
         activeLayers.length > 0
-          ? `2. 叠加图层强相关约束（核心要求）：当前用户在地图上叠加开启了【${overlaidLabels}】图层。你的回答必须与【${overlaidLabels}】强相关，以这组激活图层的具体指标、空间梯度与相互耦合关系作为核心论述主线（例如当「人口密度 + 夜晚光照」同时叠加时，必须紧扣各聚落人口密度（人/km²）与城区油灯、港口航标、昼夜银矿冶炼炉夜间光强（%）的对应关系与局部分异展开分析），不要偏离去堆砌未开启图层的无关信息。`
-          : '2. 图层聚焦约束：当前仅开启基础【政权与历史旗帜】底图，请围绕政权阶段演进、同盟疆域控制与核心历史事件展开分析。';
+          ? `2. 叠加图层强相关约束（核心要求）：当前用户在地图上叠加开启了【${overlaidLabels}】图层。你的回答必须与【${overlaidLabels}】强相关，以这组激活图层的具体指标、空间梯度与相互耦合关系作为核心论述主线（例如当「人口密度 + 夜晚光照」同时叠加时，必须紧扣各聚落人口密度（人/km²）与城区油灯、港口航标、昼夜冶炼炉夜间光强（%）的对应关系与局部分异展开分析），不要偏离去堆砌未开启图层的无关信息。`
+          : '2. 图层聚焦约束：当前仅开启基础【政权与历史旗帜】底图，请围绕政权阶段演进、行省/同盟疆域控制与核心历史事件展开分析。';
       const styleRule =
         '3. 语言与表述规范：必须使用简体中文作答；优先引用上下文中的具体年份、地名、量化数值与文献出处，条理清晰、客观精炼（控制在 180–320 字以内，除非用户要求详述）。';
       baseInstruction = [
-        '你是一位严谨的历史地理与古典文明时空分析学者。',
+        '你是一位严谨的历史地理与人类文明演进时空分析学者。',
         spatialScopeRule,
         layerCorrelationRule,
         styleRule,
@@ -502,14 +631,17 @@ export async function handleChatRequest(
       replyText = (
         await options.generateReplyFn({
           apiKey,
+          baseUrl: effectiveBaseUrl,
+          model: effectiveModel,
+          channelMode,
           systemInstruction,
           contents,
         })
       ).trim();
     } else {
-      const ai = createEdgeGeminiClient(apiKey);
+      const ai = createEdgeGeminiClient(apiKey, effectiveBaseUrl);
       const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: effectiveModel,
         contents,
         config: {
           systemInstruction,
@@ -527,6 +659,8 @@ export async function handleChatRequest(
 
     return jsonResponse({
       reply: replyText || fallbackReply,
+      modelUsed: effectiveModel,
+      channelMode,
       contextMode: hasSelectedRegion ? 'region' : 'global',
       regionTitleZh: overview.regionTitleZh,
       activeLayerSummaryZh: overlaidLabels || baseLayerLabel,
@@ -549,10 +683,10 @@ export async function handleChatRequest(
     ) {
       userFacingError =
         language === 'en'
-          ? 'Invalid or unauthorized Gemini API key. Please check GEMINI_API_KEY in Secrets.'
+          ? 'Invalid or unauthorized Gemini API key. Check your Custom API Key or server GEMINI_API_KEY.'
           : language === 'de'
-            ? 'Ungültiger Gemini-API-Schlüssel. Bitte prüfen Sie GEMINI_API_KEY in den Secrets.'
-            : 'Gemini API 密钥无效或权限不足，请检查服务端 GEMINI_API_KEY 配置。';
+            ? 'Ungültiger Gemini-API-Schlüssel. Bitte prüfen Sie Ihren API-Schlüssel.'
+            : 'Gemini API 密钥无效或权限不足，请检查自定义 API Key 或服务端 GEMINI_API_KEY 配置。';
     } else if (msg.includes('RESOURCE_EXHAUSTED') || err?.status === 429) {
       userFacingError =
         language === 'en'

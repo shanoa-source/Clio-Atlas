@@ -22,15 +22,16 @@ import {
   localizeSpecies,
   UI_TEXT,
 } from '../i18n/translations';
-import { ATHENS_MORTALITY_CATASTROPHES } from '../data/athensClassicalData';
+import { getMortalityCatastrophes } from '../shared/atlasDataLayer';
 import {
   clamp,
   computeMortalityEventEnvelope,
   densifyAndSliceWaypoints,
   getActiveMortalityCatastrophes,
-  getActivePolityPhase,
+  getActivePolityPhases,
   getActiveSpeciesDiscoveries,
   getActiveTransportRoutes,
+  resolvePolityForTerritory,
   smootherstep01,
 } from '../utils/geoMath';
 import {
@@ -49,7 +50,7 @@ import { useOsmResolvedTerritories } from '../services/osmBoundaryService';
 import {
   buildGlobeSkySpec,
   buildOfflineDarkMatterStyle,
-  CARTO_DARK_MATTER_STYLE_URL,
+  preloadCartoDarkMatterStyle,
   sanitizeCartoDarkMatterStyle,
 } from './cartoStyleBuilder';
 import { HistoricalFlagSvg } from '../components/HistoricalFlagSvg';
@@ -62,15 +63,23 @@ interface MapLibreGlobeStageProps {
   projectionMode: ProjectionMode;
   selectedRegion: MapRegionSelection | null;
   drawToolMode: RegionDrawToolMode;
-  cameraCommand: { id: number; kind: 'zoom_in' | 'zoom_out' | 'reset_north' } | null;
+  cameraCommand: {
+    id: number;
+    kind: 'zoom_in' | 'zoom_out' | 'reset_north' | 'fly_to';
+    center?: [number, number];
+    zoom?: number;
+  } | null;
   onSpaceStageChange: (stage: SpaceStage, bodyId?: string) => void;
   onSelectEntity: (entity: SelectedEntity | null) => void;
   onSelectRegion: (region: MapRegionSelection | null) => void;
   onFinishDrawTool: () => void;
   onHoverCoordsChange?: (coords: [number, number] | null) => void;
+  onMapStyleReady?: () => void;
+  onInitialParcelsReady?: () => void;
 }
 
-interface ProjectedAnchor {
+interface ProjectedPolityAnchor {
+  polity: PolityPhase;
   x: number;
   y: number;
   visible: boolean;
@@ -143,17 +152,20 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
   onSelectRegion,
   onFinishDrawTool,
   onHoverCoordsChange,
+  onMapStyleReady,
+  onInitialParcelsReady,
 }) => {
   const ui = UI_TEXT[language];
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const layersReadyRef = useRef<boolean>(false);
+  const initialParcelsNotifiedRef = useRef<boolean>(false);
   const baseLayerIdsRef = useRef<{ landuseIds: string[]; symbolIds: string[] }>({
     landuseIds: [],
     symbolIds: [],
   });
 
-  const [flagOverlay, setFlagOverlay] = useState<ProjectedAnchor | null>(null);
+  const [flagOverlays, setFlagOverlays] = useState<ProjectedPolityAnchor[]>([]);
   const [speciesBubbles, setSpeciesBubbles] = useState<ProjectedSpeciesBubble[]>([]);
   const [dragPreview, setDragPreview] = useState<{
     startX: number;
@@ -165,11 +177,11 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
   const hasSpeciesLayer = activeLayers.includes('species_discovery');
   const hasSpaceLayer = activeLayers.includes('space_race');
 
-  const activePolity: PolityPhase | null = useMemo(
-    () => getActivePolityPhase(currentYear),
+  const activePolities: PolityPhase[] = useMemo(
+    () => getActivePolityPhases(currentYear),
     [currentYear],
   );
-  const { activeTerritories } = useOsmResolvedTerritories(currentYear);
+  const { activeTerritories, loadingSnapshot } = useOsmResolvedTerritories(currentYear);
   const activeSpecies = useMemo(
     () => (hasSpeciesLayer ? getActiveSpeciesDiscoveries(currentYear, selectedRange) : []),
     [currentYear, selectedRange, hasSpeciesLayer],
@@ -182,13 +194,16 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     projectionMode,
     selectedRegion,
     drawToolMode,
-    activePolity,
+    activePolities,
     activeTerritories,
+    loadingSnapshot,
     activeSpecies,
     onSpaceStageChange,
     onSelectEntity,
     onSelectRegion,
     onHoverCoordsChange,
+    onMapStyleReady,
+    onInitialParcelsReady,
   });
   latestRef.current = {
     currentYear,
@@ -197,13 +212,16 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     projectionMode,
     selectedRegion,
     drawToolMode,
-    activePolity,
+    activePolities,
     activeTerritories,
+    loadingSnapshot,
     activeSpecies,
     onSpaceStageChange,
     onSelectEntity,
     onSelectRegion,
     onHoverCoordsChange,
+    onMapStyleReady,
+    onInitialParcelsReady,
   };
 
   const syncApiRef = useRef<{
@@ -263,35 +281,42 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       species: 0,
     };
 
-    const initialStyle = buildOfflineDarkMatterStyle(
-      latestRef.current.activeLayers.includes('night_lights'),
-      latestRef.current.projectionMode === '3d' ? 'globe' : 'mercator',
-    );
+    let cleanupInstance: (() => void) | null = null;
 
-    const map = new maplibregl.Map({
-      container,
-      style: initialStyle,
-      center: [23.8, 37.6],
-      zoom: 3.55,
-      pitch: latestRef.current.projectionMode === '3d' ? 16 : 0,
-      bearing: 0,
-      minZoom: 1.15,
-      maxZoom: 12,
-      fadeDuration: 0,
-      attributionControl: false,
-      canvasContextAttributes: {
-        preserveDrawingBuffer: true,
-        antialias: true,
-      },
-    });
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
-    mapRef.current = map;
+    void preloadCartoDarkMatterStyle(950).then((rawCartoJson) => {
+      if (cancelled || !containerRef.current) return;
+
+      const isNightInit = latestRef.current.activeLayers.includes('night_lights');
+      const projInit = latestRef.current.projectionMode === '3d' ? 'globe' : 'mercator';
+
+      const initialStyle = rawCartoJson
+        ? sanitizeCartoDarkMatterStyle(rawCartoJson, isNightInit, projInit, true)
+        : buildOfflineDarkMatterStyle(isNightInit, projInit);
+
+      const map = new maplibregl.Map({
+        container: containerRef.current,
+        style: initialStyle,
+        center: [23.8, 37.6],
+        zoom: 3.55,
+        pitch: latestRef.current.projectionMode === '3d' ? 16 : 0,
+        bearing: 0,
+        minZoom: 1.15,
+        maxZoom: 12,
+        fadeDuration: 0,
+        attributionControl: false,
+        canvasContextAttributes: {
+          preserveDrawingBuffer: true,
+          antialias: true,
+        },
+      });
+      map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+      mapRef.current = map;
 
     function syncProjectedOverlays() {
       if (cancelled) return;
       const {
         projectionMode: proj,
-        activePolity: pol,
+        activePolities: polList,
         activeSpecies: spList,
       } = latestRef.current;
 
@@ -299,18 +324,24 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       const h = container?.clientHeight || window.innerHeight;
       const center = map.getCenter();
 
-      if (pol) {
-        const [lon, lat] = pol.capitalCoords;
-        const visible =
-          proj === '2d' || isFrontHemisphere(lon, lat, center.lng, center.lat);
-        const pt = map.project([lon, lat]);
-        setFlagOverlay({
-          x: pt.x,
-          y: pt.y,
-          visible: visible && pt.x >= -60 && pt.x <= w + 60 && pt.y >= -60 && pt.y <= h + 60,
-        });
+      if (polList.length > 0) {
+        setFlagOverlays(
+          polList.map((pol) => {
+            const [lon, lat] = pol.capitalCoords;
+            const visible =
+              proj === '2d' || isFrontHemisphere(lon, lat, center.lng, center.lat);
+            const pt = map.project([lon, lat]);
+            return {
+              polity: pol,
+              x: pt.x,
+              y: pt.y,
+              visible:
+                visible && pt.x >= -60 && pt.x <= w + 60 && pt.y >= -60 && pt.y <= h + 60,
+            };
+          }),
+        );
       } else {
-        setFlagOverlay(null);
+        setFlagOverlays([]);
       }
 
       if (spList.length > 0) {
@@ -614,7 +645,7 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       const {
         currentYear: yr,
         activeLayers: layers,
-        activePolity: pol,
+        activePolities: polList,
         activeTerritories: territories,
         activeSpecies: spList,
       } = latestRef.current;
@@ -649,10 +680,11 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         | maplibregl.GeoJSONSource
         | undefined;
       if (politySrc && polityBoundarySrc) {
-        if (pol && territories.length > 0) {
+        if (polList.length > 0 && territories.length > 0) {
           politySrc.setData({
             type: 'FeatureCollection',
             features: territories.map((t) => {
+              const owner = resolvePolityForTerritory(t, polList) ?? polList[0];
               const baseOpacity =
                 t.tier === 'metropolis' ? 0.62 : t.tier === 'cleruchy' ? 0.54 : 0.45;
               const effectiveOpacity = isThermalOverlay
@@ -664,10 +696,11 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
                 type: 'Feature',
                 properties: {
                   id: t.id,
+                  polityId: owner.id,
                   nameZh: t.nameZh,
                   tier: t.tier,
-                  fillColor: pol.representativeColor,
-                  borderColor: pol.borderColor,
+                  fillColor: owner.representativeColor,
+                  borderColor: owner.borderColor,
                   fillOpacity: effectiveOpacity,
                 },
                 geometry: t.geometry as any,
@@ -677,21 +710,48 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
 
           polityBoundarySrc.setData({
             type: 'FeatureCollection',
-            features: territories.map((t) => ({
-              type: 'Feature',
-              properties: {
-                id: t.id,
-                nameZh: t.nameZh,
-                isCore: t.tier !== 'allied_tribute',
-                fillColor: pol.representativeColor,
-                borderColor: pol.borderColor,
-              },
-              geometry: t.outerBoundary as any,
-            })),
+            features: territories.map((t) => {
+              const owner = resolvePolityForTerritory(t, polList) ?? polList[0];
+              return {
+                type: 'Feature',
+                properties: {
+                  id: t.id,
+                  polityId: owner.id,
+                  nameZh: t.nameZh,
+                  isCore: t.tier !== 'allied_tribute',
+                  fillColor: owner.representativeColor,
+                  borderColor: owner.borderColor,
+                },
+                geometry: t.outerBoundary as any,
+              };
+            }),
           });
         } else {
           politySrc.setData(EMPTY_FC);
           polityBoundarySrc.setData(EMPTY_FC);
+        }
+
+        // Notify entry boot sequence once fine-grained OSM parcel geometries are pushed & rendered on the WebGL globe
+        if (!initialParcelsNotifiedRef.current) {
+          const snap = latestRef.current.loadingSnapshot;
+          const parcelsReadyForYear =
+            snap.done && (polList.length === 0 || territories.length > 0 || snap.loadedIds === 0);
+          if (parcelsReadyForYear) {
+            initialParcelsNotifiedRef.current = true;
+            let notified = false;
+            const notifyRendered = () => {
+              if (notified || cancelled) return;
+              notified = true;
+              requestAnimationFrame(() => {
+                if (!cancelled) {
+                  latestRef.current.onInitialParcelsReady?.();
+                }
+              });
+            };
+            map.once('render', notifyRendered);
+            map.triggerRepaint();
+            window.setTimeout(notifyRendered, 220);
+          }
         }
       }
 
@@ -813,7 +873,8 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         const eased = smootherstep01(rawT);
         const stillTransitioning = rawT < 1.0;
 
-        for (const ev of ATHENS_MORTALITY_CATASTROPHES) {
+        const allCatastrophes = getMortalityCatastrophes();
+        for (const ev of allCatastrophes) {
           const targetEnv = mortTargetEnv.get(ev.id) ?? 0;
           const startEnv = mortStartEnv.get(ev.id) ?? targetEnv;
           const nextEnv = stillTransitioning
@@ -865,14 +926,18 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
 
       if (mortSrc && mortEpicenterSrc) {
         if (hasMort) {
+          const allCatastrophes = getMortalityCatastrophes();
           let targetsChanged = !mortalityEnvInitialized;
-          for (const ev of ATHENS_MORTALITY_CATASTROPHES) {
+          for (const ev of allCatastrophes) {
             const nextTgt = computeMortalityEventEnvelope(ev, yr, latestRef.current.selectedRange);
             const prevTgt = mortTargetEnv.get(ev.id) ?? 0;
             if (Math.abs(nextTgt - prevTgt) > 0.002) {
               targetsChanged = true;
             }
-            mortStartEnv.set(ev.id, displayedMortalityEnv.get(ev.id) ?? (mortalityEnvInitialized ? 0 : nextTgt));
+            mortStartEnv.set(
+              ev.id,
+              displayedMortalityEnv.get(ev.id) ?? (mortalityEnvInitialized ? 0 : nextTgt),
+            );
             mortTargetEnv.set(ev.id, nextTgt);
           }
           if (targetsChanged) {
@@ -1490,6 +1555,7 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       }
 
       layersReadyRef.current = true;
+      latestRef.current.onMapStyleReady?.();
       applyLayerFadePaint();
       syncThemePaint();
       syncDataLayers();
@@ -1497,23 +1563,24 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
 
     map.on('style.load', registerOverlaySourcesAndLayers);
 
-    // Upgrade seamlessly to live CARTO Dark Matter HD Vector Tile basemap
-    fetch(CARTO_DARK_MATTER_STYLE_URL)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('CARTO style fetch error'))))
-      .then((rawCartoJson) => {
-        if (cancelled) return;
-        const sanitized = sanitizeCartoDarkMatterStyle(
-          rawCartoJson,
-          latestRef.current.activeLayers.includes('night_lights'),
-          latestRef.current.projectionMode === '3d' ? 'globe' : 'mercator',
-          true,
-        );
-        layersReadyRef.current = false;
-        map.setStyle(sanitized, { diff: false });
-      })
-      .catch(() => {
-        // Offline Natural Earth fallback style already active and crisp
-      });
+    // If CARTO style timed out during initial 950ms window, allow a background upgrade only if it arrives later
+    if (!rawCartoJson) {
+      preloadCartoDarkMatterStyle(5000)
+        .then((lateCartoJson) => {
+          if (cancelled || !lateCartoJson) return;
+          const sanitized = sanitizeCartoDarkMatterStyle(
+            lateCartoJson,
+            latestRef.current.activeLayers.includes('night_lights'),
+            latestRef.current.projectionMode === '3d' ? 'globe' : 'mercator',
+            true,
+          );
+          layersReadyRef.current = false;
+          map.setStyle(sanitized, { diff: false });
+        })
+        .catch(() => {
+          // Offline Natural Earth fallback style already active and crisp
+        });
+    }
 
     const scheduleOverlaySync = () => {
       if (moveRaf) return;
@@ -1556,7 +1623,7 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       const {
         currentYear: yr,
         activeLayers: layers,
-        activePolity: pol,
+        activePolities: polList,
         activeTerritories: terrs,
       } = latestRef.current;
 
@@ -1630,15 +1697,20 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       }
 
       // Priority 4: Geopolitical territory polygon click -> open selected element overview popover (never auto-box-select)
-      if (pol && terrs.length > 0 && map.getLayer('polity-fill')) {
+      if (polList.length > 0 && terrs.length > 0 && map.getLayer('polity-fill')) {
         const polHits = map.queryRenderedFeatures(e.point, { layers: ['polity-fill'] });
         if (polHits.length > 0) {
           const clickedId = polHits[0].properties?.id;
           const hitTerr = terrs.find((t) => t.id === clickedId) || terrs[0];
+          const ownerPol =
+            (hitTerr ? resolvePolityForTerritory(hitTerr, polList) : null) || polList[0];
+          const ownerCount = terrs.filter(
+            (t) => (resolvePolityForTerritory(t, polList) ?? polList[0]).id === ownerPol.id,
+          ).length;
           latestRef.current.onSelectEntity({
             kind: 'polity',
-            phase: pol,
-            regionCount: terrs.length,
+            phase: ownerPol,
+            regionCount: ownerCount,
             clickedTerritoryId: hitTerr?.id,
             clickedTerritoryNameZh: hitTerr?.nameZh,
             clickedTerritoryTier: hitTerr?.tier,
@@ -1662,11 +1734,19 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     };
     canvasEl.addEventListener('wheel', handleWheel, { passive: true });
 
-    syncApiRef.current = {
-      syncDataLayers,
-      syncProjectedOverlays,
-      syncThemePaint,
-    };
+      syncApiRef.current = {
+        syncDataLayers,
+        syncProjectedOverlays,
+        syncThemePaint,
+      };
+
+      cleanupInstance = () => {
+        canvasEl.removeEventListener('wheel', handleWheel);
+        syncApiRef.current = null;
+        mapRef.current = null;
+        map.remove();
+      };
+    });
 
     return () => {
       cancelled = true;
@@ -1675,13 +1755,11 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       window.clearTimeout(mortalityAnimTimer);
       cancelAnimationFrame(hoverRaf);
       cancelAnimationFrame(moveRaf);
-      canvasEl.removeEventListener('wheel', handleWheel);
-      mapRef.current = null;
-      map.remove();
+      cleanupInstance?.();
     };
   }, []);
 
-  // Sync data layers whenever year, selectedRange, selectedRegion, or multi-select activeLayers changes
+  // Sync data layers whenever year, selectedRange, selectedRegion, parcel load state, or multi-select activeLayers changes
   useEffect(() => {
     syncApiRef.current?.syncThemePaint();
     syncApiRef.current?.syncDataLayers();
@@ -1689,8 +1767,10 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     currentYear,
     selectedRange,
     activeLayers,
-    activePolity,
+    activePolities,
     activeTerritories,
+    loadingSnapshot.done,
+    loadingSnapshot.loadedIds,
     activeSpecies,
     selectedRegion,
   ]);
@@ -1728,7 +1808,7 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     return () => window.clearTimeout(timer);
   }, [projectionMode]);
 
-  // Execute toolbar camera commands (+ / - / reset north)
+  // Execute toolbar & dataset camera commands (+ / - / reset north / fly_to)
   useEffect(() => {
     if (!cameraCommand) return;
     const map = mapRef.current;
@@ -1744,32 +1824,43 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       }
       map.zoomTo(Math.max(map.getMinZoom(), nextZoom), { duration: 280 });
     } else if (cameraCommand.kind === 'reset_north') {
+      const primaryCapital = activePolities[0]?.capitalCoords ?? [23.8, 37.6];
       map.easeTo({
-        center: [23.8, 37.6],
+        center: primaryCapital,
         zoom: projectionMode === '3d' ? 3.55 : 2.3,
         pitch: projectionMode === '3d' ? 16 : 0,
         bearing: 0,
         duration: 520,
       });
+    } else if (cameraCommand.kind === 'fly_to' && cameraCommand.center) {
+      map.easeTo({
+        center: cameraCommand.center,
+        zoom:
+          projectionMode === '3d'
+            ? (cameraCommand.zoom ?? 3.55)
+            : Math.min(cameraCommand.zoom ?? 2.6, 2.8),
+        pitch: projectionMode === '3d' ? 16 : 0,
+        bearing: 0,
+        duration: 640,
+      });
     }
-  }, [cameraCommand, hasSpaceLayer, onSpaceStageChange, projectionMode]);
+  }, [activePolities, cameraCommand, hasSpaceLayer, onSpaceStageChange, projectionMode]);
 
   const visibleSpeciesBubbles = hasSpeciesLayer
     ? speciesBubbles.filter((b) => b.visible)
     : [];
-  const localizedActivePolity = activePolity ? localizePolity(activePolity, language) : null;
 
   return (
     <div
-      className="relative w-full h-full overflow-hidden bg-[#06080D]"
+      className="relative w-full h-full overflow-hidden bg-[#04060B]"
       data-testid={projectionMode === '3d' ? 'maplibre-globe-stage' : 'maplibre-2d-stage'}
     >
-      {/* Subtle Deep-Space Radial Backdrop framing the 3D MapLibre Globe */}
+      {/* Orbital Horizon Radial Backdrop framing the 3D MapLibre Globe */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            'radial-gradient(circle at 50% 48%, rgba(29, 59, 99, 0.16) 0%, rgba(6, 8, 13, 0.96) 72%)',
+            'radial-gradient(circle at 50% 48%, rgba(14, 165, 233, 0.09) 0%, rgba(15, 35, 66, 0.14) 34%, rgba(4, 6, 11, 0.98) 74%)',
         }}
       />
 
@@ -1866,13 +1957,13 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
           {/* Active Draw Tool Instruction Banner */}
           <div
             onPointerDown={(e) => e.stopPropagation()}
-            className="pointer-events-auto absolute top-16 left-4 z-20 flex items-center gap-3 px-3.5 py-2 rounded-xl bg-[#090C12]/96 border border-sky-400/45 text-xs text-slate-200 shadow-[0_12px_30px_rgba(0,0,0,0.75)]"
+            className="pointer-events-auto absolute top-16 left-4 z-20 flex items-center gap-3 px-3.5 py-2 rounded-lg atlas-chassis atlas-reticle text-xs text-slate-200"
           >
             <span>{drawToolMode === 'box' ? ui.boxModeBanner : ui.circleModeBanner}</span>
             <button
               type="button"
               onClick={onFinishDrawTool}
-              className="px-2 py-0.5 rounded-md bg-white/[0.08] hover:bg-white/[0.14] text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
+              className="px-2 py-0.5 rounded bg-white/[0.08] hover:bg-white/[0.15] text-slate-100 transition-colors cursor-pointer whitespace-nowrap"
             >
               {ui.cancelBtn}
             </button>
@@ -1887,9 +1978,9 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
                   y={Math.min(dragPreview.startY, dragPreview.curY)}
                   width={Math.abs(dragPreview.curX - dragPreview.startX)}
                   height={Math.abs(dragPreview.curY - dragPreview.startY)}
-                  fill="rgba(56, 189, 248, 0.15)"
+                  fill="rgba(56, 189, 248, 0.14)"
                   stroke="#38bdf8"
-                  strokeWidth="1.8"
+                  strokeWidth="1.5"
                   strokeDasharray="5 3"
                 />
               ) : (
@@ -1901,15 +1992,15 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
                       dragPreview.curX - dragPreview.startX,
                       dragPreview.curY - dragPreview.startY,
                     )}
-                    fill="rgba(56, 189, 248, 0.15)"
+                    fill="rgba(56, 189, 248, 0.14)"
                     stroke="#38bdf8"
-                    strokeWidth="1.8"
+                    strokeWidth="1.5"
                     strokeDasharray="5 3"
                   />
                   <circle
                     cx={dragPreview.startX}
                     cy={dragPreview.startY}
-                    r="3.2"
+                    r="3"
                     fill="#38bdf8"
                   />
                 </>
@@ -1919,74 +2010,107 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         </div>
       )}
 
-      {/* Always-Present Geopolitical & Historical Flag Leader Callout (offset west of Attica so Aegean islands stay 100% unobstructed) */}
+      {/* Always-Present Geopolitical & Historical Flag Leader Callouts */}
       <AnimatePresence>
-        {activePolity && localizedActivePolity && flagOverlay && flagOverlay.visible && (
-          <motion.div
-            key={`polity-callout-${activePolity.id}`}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-none absolute inset-0 z-10"
-          >
-            <svg className="pointer-events-none absolute inset-0 w-full h-full" aria-hidden="true">
-              <line
-                x1={Math.round(flagOverlay.x)}
-                y1={Math.round(flagOverlay.y)}
-                x2={Math.round(flagOverlay.x - 62)}
-                y2={Math.round(flagOverlay.y - 38)}
-                stroke={activePolity.borderColor}
-                strokeOpacity="0.78"
-                strokeWidth="1.25"
-              />
-              <circle
-                cx={Math.round(flagOverlay.x)}
-                cy={Math.round(flagOverlay.y)}
-                r="3.2"
-                fill={activePolity.representativeColor}
-                stroke={activePolity.borderColor}
-                strokeWidth="1.4"
-              />
-            </svg>
-            <div
-              style={{
-                transform: `translate3d(${Math.round(flagOverlay.x - 62)}px, ${Math.round(
-                  flagOverlay.y - 38,
-                )}px, 0) translate(-100%, -50%)`,
-              }}
-              className="pointer-events-auto absolute top-0 left-0"
-            >
-              <button
-                type="button"
-                data-testid="polity-flag-callout"
-                onClick={() =>
-                  onSelectEntity({
-                    kind: 'polity',
-                    phase: activePolity,
-                    regionCount: activeTerritories.length,
-                  })
-                }
-                className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-[#0A0D14]/95 border border-white/[0.14] text-slate-100 shadow-[0_10px_28px_rgba(0,0,0,0.72)] hover:border-sky-400/70 transition-colors cursor-pointer"
-                aria-label={ui.inspectPolityAria(localizedActivePolity.name)}
+        {flagOverlays
+          .filter((ov) => ov.visible)
+          .map((flagOverlay) => {
+            const pol = flagOverlay.polity;
+            const locPolity = localizePolity(pol, language);
+            const isCompactLeft = flagOverlay.x < 250;
+            const viewW = containerRef.current?.clientWidth ?? 1280;
+            const endX = isCompactLeft
+              ? clamp(Math.round(flagOverlay.x), 96, Math.max(96, viewW - 96))
+              : Math.round(flagOverlay.x - 66);
+            const endY = isCompactLeft
+              ? Math.max(68, Math.round(flagOverlay.y - 46))
+              : Math.round(flagOverlay.y - 40);
+            const cardTransform = isCompactLeft
+              ? `translate3d(${endX}px, ${endY}px, 0) translate(-50%, -100%)`
+              : `translate3d(${endX}px, ${endY}px, 0) translate(-100%, -50%)`;
+            const polRegionCount = activeTerritories.filter(
+              (t) => (resolvePolityForTerritory(t, activePolities) ?? pol).id === pol.id,
+            ).length;
+
+            return (
+              <motion.div
+                key={`polity-callout-${pol.id}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="pointer-events-none absolute inset-0 z-10"
               >
-                <HistoricalFlagSvg
-                  flagId={activePolity.flagId}
-                  language={language}
-                  className="w-9 h-6 shrink-0 rounded-[3px] ring-1 ring-white/15"
-                />
-                <div className="text-left leading-tight">
-                  <div className="text-xs font-semibold tracking-wide text-slate-50 whitespace-nowrap">
-                    {localizedActivePolity.name}
-                  </div>
-                  <div className="text-[10px] text-slate-400 whitespace-nowrap mt-0.5">
-                    {localizedActivePolity.capitalName}
-                  </div>
+                <svg
+                  className="pointer-events-none absolute inset-0 w-full h-full"
+                  aria-hidden="true"
+                >
+                  <line
+                    x1={Math.round(flagOverlay.x)}
+                    y1={Math.round(flagOverlay.y)}
+                    x2={endX}
+                    y2={endY}
+                    stroke={pol.borderColor}
+                    strokeOpacity="0.72"
+                    strokeWidth="1.15"
+                  />
+                  <circle
+                    cx={Math.round(flagOverlay.x)}
+                    cy={Math.round(flagOverlay.y)}
+                    r="6.5"
+                    fill="none"
+                    stroke={pol.borderColor}
+                    strokeOpacity="0.52"
+                    strokeWidth="0.9"
+                    strokeDasharray="2 2"
+                  />
+                  <circle
+                    cx={Math.round(flagOverlay.x)}
+                    cy={Math.round(flagOverlay.y)}
+                    r="2.6"
+                    fill={pol.representativeColor}
+                    stroke={pol.borderColor}
+                    strokeWidth="1.25"
+                  />
+                </svg>
+                <div
+                  style={{ transform: cardTransform }}
+                  className="pointer-events-auto absolute top-0 left-0"
+                >
+                  <button
+                    type="button"
+                    data-testid="polity-flag-callout"
+                    onClick={() =>
+                      onSelectEntity({
+                        kind: 'polity',
+                        phase: pol,
+                        regionCount: polRegionCount,
+                      })
+                    }
+                    className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg atlas-chassis atlas-reticle text-slate-100 hover:border-sky-400/65 transition-colors cursor-pointer group"
+                    aria-label={ui.inspectPolityAria(locPolity.name)}
+                  >
+                    <HistoricalFlagSvg
+                      flagId={pol.flagId}
+                      flagSvg={pol.flagSvg}
+                      flagAsset={pol.flagAsset}
+                      label={pol.flagLabel}
+                      language={language}
+                      className="w-9 h-6 shrink-0 rounded-[2px] ring-1 ring-white/20"
+                    />
+                    <div className="text-left leading-tight">
+                      <div className="text-xs font-semibold tracking-tight text-white group-hover:text-sky-100 transition-colors whitespace-nowrap">
+                        {locPolity.name}
+                      </div>
+                      <div className="text-[10px] text-slate-400 whitespace-nowrap mt-0.5">
+                        {locPolity.capitalName}
+                      </div>
+                    </div>
+                  </button>
                 </div>
-              </button>
-            </div>
-          </motion.div>
-        )}
+              </motion.div>
+            );
+          })}
       </AnimatePresence>
 
       {/* Flora & Fauna Species Discovery Leader Lines & Smooth Fade-In/Out Callouts */}
@@ -2008,8 +2132,8 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
                 y1={anchorY}
                 x2={x}
                 y2={y - 8}
-                stroke="rgba(52, 211, 153, 0.62)"
-                strokeWidth="1.2"
+                stroke="rgba(52, 211, 153, 0.58)"
+                strokeWidth="1.1"
                 strokeDasharray="3 2"
               />
             </motion.g>
@@ -2023,10 +2147,10 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
           return (
             <motion.div
               key={`sp-card-${species.id}`}
-              initial={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
               style={{
                 left: `${Math.round(x)}px`,
                 top: `${Math.round(y)}px`,
@@ -2037,7 +2161,7 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
               <button
                 type="button"
                 onClick={() => onSelectEntity({ kind: 'species', species })}
-                className="w-[232px] px-3 py-2 rounded-lg bg-[#0A0D14]/95 border border-emerald-500/40 text-left shadow-[0_10px_28px_rgba(0,0,0,0.68)] hover:border-emerald-400/80 transition-colors cursor-pointer"
+                className="w-[232px] px-3 py-2 rounded-lg atlas-chassis border border-emerald-400/35 text-left hover:border-emerald-400/65 transition-colors cursor-pointer"
                 aria-label={ui.speciesAria(spLoc.commonName)}
               >
                 <div className="text-xs font-semibold text-emerald-200 truncate">
@@ -2057,7 +2181,7 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         })}
       </AnimatePresence>
 
-      {/* Subtle Orbital Transition Affordance when Lunar & Deep Space layer is active on Earth */}
+      {/* Orbital Transition Affordance when Lunar & Deep Space layer is active on Earth */}
       <AnimatePresence>
         {hasSpaceLayer && projectionMode === '3d' && (
           <motion.div
@@ -2065,13 +2189,13 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-auto absolute top-16 left-4 z-10 flex items-center gap-3 px-3.5 py-2 rounded-xl bg-[#0A0D14]/95 border border-white/[0.08] text-xs text-slate-300 shadow-[0_10px_28px_rgba(0,0,0,0.65)]"
+            className="pointer-events-auto absolute top-16 left-4 z-10 flex items-center gap-3 px-3.5 py-2 rounded-lg atlas-chassis atlas-reticle text-xs text-slate-300"
           >
             <span>{ui.scrollToSolarHint}</span>
             <button
               type="button"
               onClick={() => onSpaceStageChange('solar_system', 'moon')}
-              className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/35 text-sky-300 font-medium transition-colors whitespace-nowrap cursor-pointer"
+              className="px-2.5 py-1 rounded bg-sky-400/15 hover:bg-sky-400/25 border border-sky-400/35 text-sky-300 font-medium transition-colors whitespace-nowrap cursor-pointer"
             >
               {ui.enterSolarBtn}
             </button>

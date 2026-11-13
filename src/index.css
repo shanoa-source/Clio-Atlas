@@ -1,11 +1,22 @@
 @import "tailwindcss";
-@import "maplibre-gl/dist/maplibre-gl.css";
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
   :root {
     font-family: "Plus Jakarta Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif;
     color-scheme: dark;
+    --atlas-bg: #04060b;
+    --atlas-chassis: rgba(7, 10, 16, 0.96);
+    --atlas-chassis-elevated: rgba(9, 13, 21, 0.98);
+    --atlas-well: #04060a;
+    --atlas-border: rgba(148, 163, 184, 0.14);
+    --atlas-border-strong: rgba(56, 189, 248, 0.42);
+    --atlas-accent: #38bdf8;
+  }
+
+  body {
+    background-color: var(--atlas-bg);
+    letter-spacing: 0.008em;
   }
 
   .font-mono {
@@ -14,14 +25,127 @@
   }
 }
 
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
+@layer components {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Aerospace Machined Obsidian Chassis (Zero backdrop-filter over WebGL for peak GPU/CPU frame pacing) */
+  .atlas-chassis {
+    background: linear-gradient(180deg, rgba(11, 15, 24, 0.965) 0%, rgba(6, 9, 15, 0.975) 100%);
+    border: 1px solid rgba(148, 163, 184, 0.13);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 0 0 1px rgba(15, 23, 42, 0.45),
+      0 20px 48px -12px rgba(0, 0, 0, 0.88);
+  }
+
+  .atlas-popover {
+    background: linear-gradient(180deg, rgba(12, 17, 27, 0.985) 0%, rgba(7, 10, 16, 0.99) 100%);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.09),
+      0 26px 60px -10px rgba(0, 0, 0, 0.92);
+  }
+
+  /* Recessed Optical Instrument Well */
+  .atlas-well {
+    background-color: #030509;
+    border: 1px solid rgba(148, 163, 184, 0.10);
+    box-shadow:
+      inset 0 1px 4px rgba(0, 0, 0, 0.92),
+      0 1px 0 rgba(255, 255, 255, 0.035);
+  }
+
+  /* Precision Optical Reticle Corner Fiducials — inside @layer components so Tailwind .fixed / .absolute utilities always take precedence */
+  .atlas-reticle {
+    position: relative;
+  }
+
+  .atlas-reticle::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background:
+      linear-gradient(90deg, rgba(56, 189, 248, 0.48) 0, rgba(56, 189, 248, 0.48) 7px, transparent 7px) top left / 100% 1px no-repeat,
+      linear-gradient(180deg, rgba(56, 189, 248, 0.48) 0, rgba(56, 189, 248, 0.48) 7px, transparent 7px) top left / 1px 100% no-repeat,
+      linear-gradient(270deg, rgba(56, 189, 248, 0.48) 0, rgba(56, 189, 248, 0.48) 7px, transparent 7px) top right / 100% 1px no-repeat,
+      linear-gradient(180deg, rgba(56, 189, 248, 0.48) 0, rgba(56, 189, 248, 0.48) 7px, transparent 7px) top right / 1px 100% no-repeat,
+      linear-gradient(90deg, rgba(56, 189, 248, 0.34) 0, rgba(56, 189, 248, 0.34) 7px, transparent 7px) bottom left / 100% 1px no-repeat,
+      linear-gradient(0deg, rgba(56, 189, 248, 0.34) 0, rgba(56, 189, 248, 0.34) 7px, transparent 7px) bottom left / 1px 100% no-repeat,
+      linear-gradient(270deg, rgba(56, 189, 248, 0.34) 0, rgba(56, 189, 248, 0.34) 7px, transparent 7px) bottom right / 100% 1px no-repeat,
+      linear-gradient(0deg, rgba(56, 189, 248, 0.34) 0, rgba(56, 189, 248, 0.34) 7px, transparent 7px) bottom right / 1px 100% no-repeat;
+    opacity: 0.72;
+    z-index: 2;
+  }
+
+  /* Precision Thin Scrollbars for Data Tables & AI Stream */
+  .atlas-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.22) transparent;
+  }
+
+  .atlas-scroll::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  .atlas-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .atlas-scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.22);
+    border-radius: 9999px;
+  }
+
+  .atlas-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(56, 189, 248, 0.45);
+  }
+}
+
+@keyframes atlasSpinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes atlasSpinReverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-atlas-orbit {
+  animation: atlasSpinSlow 24s linear infinite;
+}
+
+.animate-atlas-orbit-reverse {
+  animation: atlasSpinReverse 36s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-atlas-orbit,
+  .animate-atlas-orbit-reverse {
+    animation: none;
+  }
 }
 
 /* Enterprise dark styling for MapLibre canvas & subtle legal attribution */
 .maplibregl-map {
+  position: relative;
+  width: 100%;
+  height: 100%;
   font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: #06080d;
+  background-color: #04060b;
   outline: none;
 }
 
@@ -31,9 +155,9 @@
 
 .maplibregl-ctrl-attrib.maplibregl-compact,
 .maplibregl-ctrl-attrib {
-  background-color: rgba(11, 14, 20, 0.78) !important;
-  color: rgba(148, 163, 184, 0.72) !important;
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background-color: rgba(7, 10, 16, 0.82) !important;
+  color: rgba(148, 163, 184, 0.68) !important;
+  border: 1px solid rgba(148, 163, 184, 0.12) !important;
   border-radius: 6px !important;
   font-size: 10px !important;
   padding: 2px 6px !important;
@@ -49,7 +173,7 @@
   color: #e2e8f0 !important;
 }
 
-.maplibregl-ctrl-bottom-right {
+.maplibregl-ctrl-bottom-left {
   bottom: 6px !important;
-  right: 10px !important;
+  left: 10px !important;
 }

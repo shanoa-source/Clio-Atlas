@@ -16,6 +16,7 @@ import {
 } from './src/edge/apiHandlers';
 import { AtlasStorageAdapter, EdgeEnv } from './src/edge/types';
 import {
+  discoverBackendDatasetsFromDisk,
   getDataSchemaCatalog,
   importDataToDisk,
   loadDiskSnapshot,
@@ -76,6 +77,13 @@ function createNodeDiskStorageAdapter(
     persistenceKind: 'node-disk',
     async getSnapshot() {
       return loadDiskSnapshot(baseDir);
+    },
+    async getDetectedDatasets() {
+      const localDetected = discoverBackendDatasetsFromDisk(baseDir);
+      if (localDetected.datasetIds.length > 0) {
+        return localDetected;
+      }
+      return discoverBackendDatasetsFromDisk(rootSchemaDir);
     },
     async commitImport({ payload, target, mode, dryRun }) {
       return importDataToDisk({

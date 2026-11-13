@@ -374,8 +374,8 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
   return (
     <section
       aria-label={ui.timelineSectionAria}
-      className={`pointer-events-none fixed bottom-3.5 ${
-        sidebarOpen ? 'left-4 right-4 lg:right-[384px]' : 'inset-x-4'
+      className={`pointer-events-none fixed bottom-3 ${
+        sidebarOpen ? 'left-3 right-3 sm:left-4 sm:right-4 lg:right-[384px]' : 'inset-x-3 sm:inset-x-4'
       } z-20 flex flex-col items-center`}
     >
       <div className="pointer-events-auto w-full max-w-[1040px]">
@@ -384,26 +384,26 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
           <button
             type="button"
             onClick={() => setCollapsed((c) => !c)}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#090C12]/96 border border-white/[0.09] text-[11px] font-medium text-slate-300 hover:text-white hover:border-white/[0.16] transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_8px_22px_rgba(0,0,0,0.68)] cursor-pointer whitespace-nowrap"
+            className="flex items-center gap-1.5 h-6 px-3 rounded-md atlas-chassis text-[11px] font-medium text-slate-300 hover:text-white hover:border-sky-400/40 transition-colors cursor-pointer whitespace-nowrap"
             aria-expanded={!collapsed}
             aria-label={collapsed ? ui.expandTimelineAria : ui.collapseTimelineAria}
           >
             {collapsed ? (
               <>
                 <ChevronUp className="w-3.5 h-3.5 text-sky-400" />
-                <span className="font-mono tabular-nums">
+                <span className="font-mono tabular-nums text-white">
                   {formatYearByLang(currentYear, language)}
                 </span>
                 {normalizedRange && (
                   <>
-                    <span className="text-slate-500">·</span>
+                    <span className="text-slate-600">·</span>
                     <span className="font-mono tabular-nums text-sky-300">
                       {formatYearByLang(normalizedRange[0], language, true)} –{' '}
                       {formatYearByLang(normalizedRange[1], language, true)}
                     </span>
                   </>
                 )}
-                <span className="text-slate-500">·</span>
+                <span className="text-slate-600">·</span>
                 <span>{ui.expandTimelineBtn}</span>
               </>
             ) : (
@@ -419,116 +419,118 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
           {!collapsed && (
             <motion.div
               key="timeline-body"
-              initial={{ opacity: 0, y: 14 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 14 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="rounded-2xl bg-[#090C12]/96 border border-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_24px_54px_rgba(0,0,0,0.86)] px-4 py-3"
+              exit={{ opacity: 0, y: 12 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="rounded-xl atlas-chassis atlas-reticle px-3.5 sm:px-4 py-2.5"
             >
-              {/* Top Control Deck (strictly single-line on desktop) */}
-              <div className="flex items-center justify-between gap-2.5 mb-2.5 overflow-x-auto">
+              {/* Top Control Deck */}
+              <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-2.5 gap-y-1.5 mb-2 lg:overflow-x-auto atlas-scroll pb-0.5">
                 {/* Left: Calibrated Tabular Year Readout + Unboxed Resolution Metadata */}
-                <div className="flex items-baseline gap-2 shrink-0">
+                <div className="flex items-center gap-2.5 shrink-0">
                   <span
                     className="text-[17px] leading-none font-semibold text-white font-mono tabular-nums tracking-tight whitespace-nowrap"
                     data-testid="current-year-display"
                   >
                     {formatYearByLang(currentYear, language)}
                   </span>
-                  <span className="text-slate-600" aria-hidden="true">
-                    ·
-                  </span>
+                  <span className="h-3.5 w-px bg-white/[0.1]" aria-hidden="true" />
                   <span className="text-[11px] text-slate-400 font-mono tabular-nums whitespace-nowrap">
                     {ui.resolutionLabel(minorStep)}
                   </span>
                 </div>
 
-                {/* Center: Recessed Segmented Transport & Playback Cluster */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-[#05070B] border border-white/[0.08] shadow-[inset_0_1px_3px_rgba(0,0,0,0.85)]">
-                    <button
-                      type="button"
-                      onClick={() => stepYear(-10)}
-                      className="flex items-center gap-0.5 h-7 px-2 rounded-lg text-xs font-mono tabular-nums text-slate-300 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                      aria-label={ui.stepBack10Aria}
-                    >
-                      <ChevronsLeft className="w-3.5 h-3.5" />
-                      <span>10</span>
-                    </button>
+                {/* Center: Integrated Recessed Transport & Speed Channel */}
+                <div className="flex items-center gap-0.5 p-0.5 rounded-lg atlas-well shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => stepYear(-10)}
+                    className="flex items-center gap-0.5 h-7 px-2 rounded-md text-xs font-mono tabular-nums text-slate-300 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    aria-label={ui.stepBack10Aria}
+                  >
+                    <ChevronsLeft className="w-3.5 h-3.5" />
+                    <span>10</span>
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => stepYear(-1)}
-                      className="flex items-center gap-0.5 h-7 px-2.5 rounded-lg text-xs font-mono tabular-nums text-slate-200 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                      aria-label={ui.stepBack1Aria}
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                      <span>{ui.oneYearShort}</span>
-                    </button>
+                  <button
+                    type="button"
+                    onClick={() => stepYear(-1)}
+                    className="flex items-center gap-0.5 h-7 px-2 rounded-md text-xs font-mono tabular-nums text-slate-200 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    aria-label={ui.stepBack1Aria}
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span>{ui.oneYearShort}</span>
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={onTogglePlay}
-                      className="flex items-center gap-1.5 h-7 px-3.5 mx-0.5 rounded-lg bg-sky-400 hover:bg-sky-300 text-xs font-semibold text-slate-950 transition-colors shadow-[0_2px_10px_rgba(56,189,248,0.28)] cursor-pointer whitespace-nowrap shrink-0"
-                      aria-label={isPlaying ? ui.pauseAria : ui.playAria}
-                    >
-                      {isPlaying ? (
-                        <>
-                          <Pause className="w-3.5 h-3.5" />
-                          <span>{ui.pauseBtn}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3.5 h-3.5" />
-                          <span>{normalizedRange ? ui.loopPlayBtn : ui.playBtn}</span>
-                        </>
-                      )}
-                    </button>
+                  <button
+                    type="button"
+                    onClick={onTogglePlay}
+                    className="flex items-center gap-1.5 h-7 px-3.5 mx-0.5 rounded-md bg-sky-400 hover:bg-sky-300 text-xs font-semibold text-slate-950 transition-colors shadow-[0_0_14px_rgba(56,189,248,0.28)] cursor-pointer whitespace-nowrap shrink-0"
+                    aria-label={isPlaying ? ui.pauseAria : ui.playAria}
+                  >
+                    {isPlaying ? (
+                      <>
+                        <Pause className="w-3.5 h-3.5" />
+                        <span>{ui.pauseBtn}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5" />
+                        <span>{normalizedRange ? ui.loopPlayBtn : ui.playBtn}</span>
+                      </>
+                    )}
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => stepYear(1)}
-                      className="flex items-center gap-0.5 h-7 px-2.5 rounded-lg text-xs font-mono tabular-nums text-slate-200 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                      aria-label={ui.stepForward1Aria}
-                    >
-                      <span>{ui.oneYearShort}</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+                  <button
+                    type="button"
+                    onClick={() => stepYear(1)}
+                    className="flex items-center gap-0.5 h-7 px-2 rounded-md text-xs font-mono tabular-nums text-slate-200 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    aria-label={ui.stepForward1Aria}
+                  >
+                    <span>{ui.oneYearShort}</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => stepYear(10)}
-                      className="flex items-center gap-0.5 h-7 px-2 rounded-lg text-xs font-mono tabular-nums text-slate-300 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                      aria-label={ui.stepForward10Aria}
-                    >
-                      <span>10</span>
-                      <ChevronsRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => stepYear(10)}
+                    className="flex items-center gap-0.5 h-7 px-2 rounded-md text-xs font-mono tabular-nums text-slate-300 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    aria-label={ui.stepForward10Aria}
+                  >
+                    <span>10</span>
+                    <ChevronsRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div className="h-4 w-px bg-white/[0.09] mx-0.5" aria-hidden="true" />
 
                   <button
                     type="button"
                     onClick={onToggleSpeed}
-                    className="h-8 px-2.5 rounded-lg bg-[#05070B] hover:bg-white/[0.07] border border-white/[0.08] text-xs font-mono tabular-nums text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    className={`h-7 px-2 rounded-md text-xs font-mono tabular-nums transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                      playbackSpeed === 5
+                        ? 'bg-sky-400/[0.18] text-sky-300 font-semibold'
+                        : 'text-slate-300 hover:text-white hover:bg-white/[0.07]'
+                    }`}
                     aria-label={ui.speedAria(playbackSpeed)}
                   >
                     {playbackSpeed}×
                   </button>
                 </div>
 
-                {/* Right: Caliper Interval Selection Tool + Direct Year Jump + Vernier Scale Zoom */}
-                <div className="flex items-center gap-2 shrink-0">
+                {/* Right: Caliper Interval Selection + Direct Year Jump + Vernier Scale Zoom */}
+                <div className="flex items-center gap-1.5 shrink-0">
                   {/* Time-Range Selection Toggle & Bounds Inputs */}
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={toggleRangeSelection}
                       aria-pressed={normalizedRange !== null}
                       aria-label={ui.rangeToggleAria}
-                      className={`flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                      className={`flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                         normalizedRange
-                          ? 'bg-sky-400/18 border-sky-400/55 text-sky-200'
-                          : 'bg-[#05070B] border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.06]'
+                          ? 'bg-sky-400/[0.16] border-sky-400/50 text-sky-200'
+                          : 'atlas-well text-slate-300 hover:text-white hover:bg-white/[0.05]'
                       }`}
                     >
                       <Repeat className="w-3.5 h-3.5 text-sky-400" />
@@ -551,7 +553,7 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                             onChange={(e) => setRangeStartText(e.target.value)}
                             onBlur={() => commitRangeField('start')}
                             aria-label={ui.rangeStartAria}
-                            className="w-14 h-8 px-1.5 rounded-lg bg-sky-400/[0.08] border border-sky-400/35 text-xs font-mono tabular-nums text-sky-100 text-center focus:outline-none focus:border-sky-300"
+                            className="w-13 h-7 px-1.5 rounded-md bg-sky-400/[0.08] border border-sky-400/35 text-xs font-mono tabular-nums text-sky-100 text-center focus:outline-none focus:border-sky-300"
                           />
                         </form>
                         <span className="text-xs text-slate-500 font-mono" aria-hidden="true">
@@ -571,14 +573,14 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                             onChange={(e) => setRangeEndText(e.target.value)}
                             onBlur={() => commitRangeField('end')}
                             aria-label={ui.rangeEndAria}
-                            className="w-14 h-8 px-1.5 rounded-lg bg-sky-400/[0.08] border border-sky-400/35 text-xs font-mono tabular-nums text-sky-100 text-center focus:outline-none focus:border-sky-300"
+                            className="w-13 h-7 px-1.5 rounded-md bg-sky-400/[0.08] border border-sky-400/35 text-xs font-mono tabular-nums text-sky-100 text-center focus:outline-none focus:border-sky-300"
                           />
                         </form>
                         <button
                           type="button"
                           onClick={() => onChangeSelectedRange(null)}
                           aria-label={ui.clearRangeAria}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+                          className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -586,7 +588,7 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                     )}
                   </div>
 
-                  <div className="h-4 w-px bg-white/[0.08]" aria-hidden="true" />
+                  <div className="h-4 w-px bg-white/[0.09] mx-0.5" aria-hidden="true" />
 
                   <form
                     onSubmit={(e) => {
@@ -610,11 +612,11 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                       onChange={(e) => setYearInputText(e.target.value)}
                       onBlur={commitYearInput}
                       aria-label={ui.jumpInputAria}
-                      className="w-16 h-8 px-2 rounded-lg bg-[#05070B] border border-white/[0.09] text-xs font-mono tabular-nums text-slate-100 text-center focus:outline-none focus:border-sky-400"
+                      className="w-15 h-7 px-1.5 rounded-md atlas-well text-xs font-mono tabular-nums text-slate-100 text-center focus:outline-none focus:border-sky-400/70"
                     />
                   </form>
 
-                  <div className="h-4 w-px bg-white/[0.08]" aria-hidden="true" />
+                  <div className="h-4 w-px bg-white/[0.09] mx-0.5" aria-hidden="true" />
 
                   <button
                     type="button"
@@ -623,21 +625,21 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                     }
                     aria-pressed={minorStep === 1}
                     aria-label={ui.oneYearTickAria}
-                    className={`h-8 px-2.5 rounded-lg border text-xs font-mono tabular-nums transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    className={`h-7 px-2 rounded-md border text-xs font-mono tabular-nums transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                       minorStep === 1
-                        ? 'bg-sky-400/18 border-sky-400/50 text-sky-300 font-medium'
-                        : 'bg-[#05070B] border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.06]'
+                        ? 'bg-sky-400/[0.16] border-sky-400/50 text-sky-300 font-medium'
+                        : 'atlas-well text-slate-300 hover:text-white hover:bg-white/[0.05]'
                     }`}
                   >
                     {ui.oneYearTickBtn}
                   </button>
 
-                  <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#05070B] border border-white/[0.08]">
+                  <div className="flex items-center gap-0.5 p-0.5 rounded-md atlas-well">
                     <button
                       type="button"
                       onClick={() => zoomTimeline(0.65)}
                       disabled={visibleSpan <= MIN_SPAN_YEARS}
-                      className="p-1.5 rounded-md hover:bg-white/[0.08] disabled:opacity-35 text-slate-200 transition-colors cursor-pointer"
+                      className="p-1 rounded-[4px] hover:bg-white/[0.08] disabled:opacity-35 text-slate-200 transition-colors cursor-pointer"
                       aria-label={ui.zoomInTimelineAria}
                     >
                       <ZoomIn className="w-3.5 h-3.5" />
@@ -646,7 +648,7 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                       type="button"
                       onClick={() => zoomTimeline(1.55)}
                       disabled={visibleSpan >= MAX_SPAN_YEARS}
-                      className="p-1.5 rounded-md hover:bg-white/[0.08] disabled:opacity-35 text-slate-200 transition-colors cursor-pointer"
+                      className="p-1 rounded-[4px] hover:bg-white/[0.08] disabled:opacity-35 text-slate-200 transition-colors cursor-pointer"
                       aria-label={ui.zoomOutTimelineAria}
                     >
                       <ZoomOut className="w-3.5 h-3.5" />
@@ -672,45 +674,46 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                   if (e.key === 'ArrowLeft') stepYear(-1);
                   else if (e.key === 'ArrowRight') stepYear(1);
                 }}
-                className="relative h-[52px] rounded-xl bg-[#05070B] border border-white/[0.09] shadow-[inset_0_2px_10px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(0,0,0,0.85)] overflow-hidden select-none cursor-ew-resize focus:outline-none focus:border-sky-400/70"
+                className="relative h-[50px] rounded-lg atlas-well overflow-hidden select-none cursor-ew-resize focus:outline-none focus:border-sky-400/70"
               >
                 {/* Optical Edge Vignette Masks */}
                 <div
                   className="pointer-events-none absolute inset-y-0 left-0 w-12 z-10"
                   style={{
-                    background: 'linear-gradient(90deg, #05070B 0%, rgba(5,7,11,0) 100%)',
+                    background: 'linear-gradient(90deg, #030509 0%, rgba(3,5,9,0) 100%)',
                   }}
                 />
                 <div
                   className="pointer-events-none absolute inset-y-0 right-0 w-12 z-10"
                   style={{
-                    background: 'linear-gradient(270deg, #05070B 0%, rgba(5,7,11,0) 100%)',
+                    background: 'linear-gradient(270deg, #030509 0%, rgba(3,5,9,0) 100%)',
                   }}
                 />
 
-                {/* Top & Bottom Vernier Reference Hairlines */}
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.05]" />
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-white/[0.08]" />
+                {/* Top, Center Equatorial & Bottom Vernier Reference Hairlines */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/[0.04]" />
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-sky-400/[0.05]" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-white/[0.07]" />
 
                 {/* Selected Time Interval Caliper Window & Outside Dimming */}
                 {normalizedRange && (
                   <>
                     <div
                       style={{ width: `${leftHandlePct}%` }}
-                      className="pointer-events-none absolute inset-y-0 left-0 bg-black/60 z-[5]"
+                      className="pointer-events-none absolute inset-y-0 left-0 bg-black/65 z-[5]"
                     />
                     <div
                       style={{
                         left: `${leftHandlePct}%`,
                         width: `${Math.max(0, rightHandlePct - leftHandlePct)}%`,
                         background:
-                          'linear-gradient(180deg, rgba(56,189,248,0.16) 0%, rgba(56,189,248,0.04) 100%)',
+                          'linear-gradient(180deg, rgba(56,189,248,0.15) 0%, rgba(56,189,248,0.03) 100%)',
                       }}
                       className="pointer-events-none absolute inset-y-0 border-y border-sky-400/50 z-[6]"
                     />
                     <div
                       style={{ left: `${rightHandlePct}%` }}
-                      className="pointer-events-none absolute inset-y-0 right-0 bg-black/60 z-[5]"
+                      className="pointer-events-none absolute inset-y-0 right-0 bg-black/65 z-[5]"
                     />
                   </>
                 )}
@@ -726,15 +729,15 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                     <div
                       className={
                         t.isMajor
-                          ? 'w-px h-1.5 bg-slate-400/45'
+                          ? 'w-px h-1.5 bg-slate-400/50'
                           : t.isMedium
-                            ? 'w-px h-1 bg-slate-600/40'
+                            ? 'w-px h-1 bg-slate-600/45'
                             : 'w-px h-0.5 bg-transparent'
                       }
                     />
 
-                    {/* Major Year Label */}
-                    {t.isMajor && (
+                    {/* Major Year Label (guarded from left/right border clipping) */}
+                    {t.isMajor && t.pct >= 5 && t.pct <= 95 && (
                       <span className="text-[10px] leading-none font-mono tabular-nums text-slate-300/90 whitespace-nowrap">
                         {formatYearByLang(t.year, language, true)}
                       </span>
@@ -744,11 +747,11 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                     <div
                       className={
                         t.isMajor
-                          ? 'w-px h-4 bg-slate-200/80'
+                          ? 'w-px h-3.5 bg-slate-200/85'
                           : t.isMedium
                             ? 'w-px h-2.5 bg-slate-500/70'
                             : minorStep === 1
-                              ? 'w-px h-2 bg-sky-400/55'
+                              ? 'w-px h-2 bg-sky-400/60'
                               : 'w-px h-1.5 bg-slate-700/85'
                       }
                     />
@@ -780,12 +783,12 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                     }}
                     className="absolute top-0 bottom-0 -translate-x-1/2 z-30 w-5 flex items-center justify-center cursor-ew-resize focus:outline-none group"
                   >
-                    <span className="absolute inset-y-0 w-0.5 bg-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.65)]" />
+                    <span className="absolute inset-y-0 w-px bg-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.65)]" />
                     <span className="absolute top-0 left-1/2 w-2 h-0.5 bg-sky-300" />
                     <span className="absolute bottom-0 left-1/2 w-2 h-0.5 bg-sky-300" />
-                    <span className="relative w-3.5 h-6 rounded-[3px] bg-sky-400 group-hover:bg-sky-300 group-focus-visible:ring-2 group-focus-visible:ring-white text-slate-950 shadow-[0_2px_8px_rgba(0,0,0,0.65)] flex items-center justify-center gap-0.5 transition-colors">
-                      <span className="w-px h-3 bg-slate-950/75" />
-                      <span className="w-px h-3 bg-slate-950/75" />
+                    <span className="relative w-3 h-5 rounded-[2px] bg-sky-400 group-hover:bg-sky-300 group-focus-visible:ring-2 group-focus-visible:ring-white text-slate-950 shadow-[0_2px_8px_rgba(0,0,0,0.75)] flex items-center justify-center gap-0.5 transition-colors">
+                      <span className="w-px h-2.5 bg-slate-950/75" />
+                      <span className="w-px h-2.5 bg-slate-950/75" />
                     </span>
                   </button>
                 )}
@@ -815,12 +818,12 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                     }}
                     className="absolute top-0 bottom-0 -translate-x-1/2 z-30 w-5 flex items-center justify-center cursor-ew-resize focus:outline-none group"
                   >
-                    <span className="absolute inset-y-0 w-0.5 bg-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.65)]" />
+                    <span className="absolute inset-y-0 w-px bg-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.65)]" />
                     <span className="absolute top-0 right-1/2 w-2 h-0.5 bg-sky-300" />
                     <span className="absolute bottom-0 right-1/2 w-2 h-0.5 bg-sky-300" />
-                    <span className="relative w-3.5 h-6 rounded-[3px] bg-sky-400 group-hover:bg-sky-300 group-focus-visible:ring-2 group-focus-visible:ring-white text-slate-950 shadow-[0_2px_8px_rgba(0,0,0,0.65)] flex items-center justify-center gap-0.5 transition-colors">
-                      <span className="w-px h-3 bg-slate-950/75" />
-                      <span className="w-px h-3 bg-slate-950/75" />
+                    <span className="relative w-3 h-5 rounded-[2px] bg-sky-400 group-hover:bg-sky-300 group-focus-visible:ring-2 group-focus-visible:ring-white text-slate-950 shadow-[0_2px_8px_rgba(0,0,0,0.75)] flex items-center justify-center gap-0.5 transition-colors">
+                      <span className="w-px h-2.5 bg-slate-950/75" />
+                      <span className="w-px h-2.5 bg-slate-950/75" />
                     </span>
                   </button>
                 )}
@@ -832,7 +835,7 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
                     !isDragging && normalizedRange ? 'transition-[left] duration-150 ease-out' : ''
                   }`}
                 >
-                  <div className="w-3 h-1.5 rounded-b-[2px] bg-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.85)]" />
+                  <div className="w-2.5 h-1.5 rounded-b-[2px] bg-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.9)]" />
                   <div className="w-px flex-1 bg-sky-300 shadow-[0_0_10px_rgba(56,189,248,0.85)]" />
                   <div className="w-2 h-0.5 bg-sky-300" />
                 </div>

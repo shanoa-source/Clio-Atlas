@@ -158,12 +158,16 @@
         "endYear",
         "representativeColor",
         "borderColor",
-        "flagId",
         "flagLabel",
         "capitalName",
         "capitalCoords",
         "historicalSummary",
         "sourceCitation"
+      ],
+      "anyOf": [
+        { "required": ["flagId"] },
+        { "required": ["flagSvg"] },
+        { "required": ["flagAsset"] }
       ],
       "additionalProperties": false,
       "properties": {
@@ -186,6 +190,14 @@
             "strategoi_wartime",
             "ionian_siege"
           ]
+        },
+        "flagSvg": {
+          "type": "string",
+          "description": "Sanitized inline <svg>...</svg> markup for custom historical flags."
+        },
+        "flagAsset": {
+          "type": "string",
+          "description": "HTTPS URL, root-relative asset path, or data:image/(svg+xml|png|jpeg|webp) URI for custom historical flags."
         },
         "flagLabel": { "type": "string" },
         "capitalName": { "type": "string", "minLength": 1 },
@@ -373,7 +385,7 @@
         "id",
         "commonNameZh",
         "scientificName",
-        "classicalGreekName",
+        "classicalSourceName",
         "kingdom",
         "discovererZh",
         "discovererEn",
@@ -384,15 +396,15 @@
         "sourceCitation"
       ],
       "additionalProperties": false,
-      "description": "Botanical and zoological historical records. Pre-Linnaean (< 1735 CE) rules: (1) `discovererZh` / `discovererEn` / `discovererI18n` MUST state the earliest extant textual chronicler or historical event witness (e.g. '阿里斯托芬 / 泰奥弗拉斯托斯记述' / 'Recorded by Aristophanes / Theophrastus') — never fabricate ancient discoverers or fictional bureaus; (2) `discoveryYear` MUST anchor to the canonical text's composition year or landmark historical event year (e.g. -480 for the sacred olive sprouting after the Persian sack of the Acropolis); (3) `classicalGreekName` keeps its key name globally as 'Classical / Canonical Source-Language Original Name' (Ancient Greek for Greece, Pre-Qin/Han-Tang classical name + transliteration for China, Classical Nahuatl for Mesoamerica, Sanskrit, etc.).",
+      "description": "Botanical and zoological historical records. Pre-Linnaean (< 1735 CE) rules: (1) `discovererZh` / `discovererEn` / `discovererI18n` MUST state the earliest extant textual chronicler or historical event witness (e.g. '阿里斯托芬 / 泰奥弗拉斯托斯记述' / 'Recorded by Aristophanes / Theophrastus') — never fabricate ancient discoverers or fictional bureaus; (2) `discoveryYear` MUST anchor to the canonical text's composition year or landmark historical event year (e.g. -480 for the sacred olive sprouting after the Persian sack of the Acropolis); (3) `classicalSourceName` stores the Classical / Canonical Source-Language Original Name (Ancient Greek for Greece, Latin/Greek for Rome, Pre-Qin/Han-Tang classical name + transliteration for China, Classical Nahuatl for Mesoamerica, Sanskrit, etc.).",
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "commonNameZh": { "type": "string", "minLength": 1 },
         "commonNameI18n": { "$ref": "#/$defs/LocalizedStringMap" },
         "scientificName": { "type": "string", "minLength": 1 },
-        "classicalGreekName": {
+        "classicalSourceName": {
           "type": "string",
-          "description": "Generalized Classical / Canonical Source-Language Original Name (keep key `classicalGreekName` across all civilizations: Ancient Greek for Greece, Pre-Qin/Han-Tang classical name + Latin transliteration for China, Classical Nahuatl for Mesoamerica, Sanskrit, etc.)."
+          "description": "Classical / Canonical Source-Language Original Name across civilizations (Ancient Greek for Greece, Latin/Greek for Rome, Pre-Qin/Han-Tang classical name + Latin transliteration for China, Classical Nahuatl for Mesoamerica, Sanskrit, etc.)."
         },
         "kingdom": { "type": "string", "enum": ["plantae", "animalia"] },
         "discovererZh": {

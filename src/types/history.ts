@@ -46,7 +46,11 @@ export interface PolityPhase {
   endYear: number;   // Inclusive, e.g., -404 = 404 BCE
   representativeColor: string;
   borderColor: string;
-  flagId: FlagVariantId;
+  flagId?: FlagVariantId;
+  /** Optional inline sanitized SVG markup (<svg ...>...</svg>) for custom historical flags */
+  flagSvg?: string;
+  /** Optional external/local asset URL or data:image/... URI for custom historical flags */
+  flagAsset?: string;
   flagLabel: string;
   capitalName: string;
   capitalCoords: [number, number]; // [lon, lat]
@@ -56,7 +60,9 @@ export interface PolityPhase {
 
 export interface TerritoryRegion {
   id: string;
+  polityId?: string;
   nameZh: string;
+  nameI18n?: LocalizedStringMap;
   validFrom: number;
   validTo: number;
   tier: TerritoryTier;
@@ -66,16 +72,20 @@ export interface TerritoryRegion {
    * and populate real IDs via `scripts/resolve-osm-ids.ts`.
    */
   osmIds: string[];
+  approxBBox?: GeoBBox;
 }
 
 export interface ResolvedTerritoryFeature {
   id: string;
+  polityId?: string;
   nameZh: string;
+  nameI18n?: LocalizedStringMap;
   validFrom: number;
   validTo: number;
   tier: TerritoryTier;
   geometry: GeoJsonMultiPolygon;
   outerBoundary: GeoJsonMultiLineString;
+  approxBBox?: GeoBBox;
 }
 
 export interface ThermalSubZone {
@@ -133,10 +143,10 @@ export interface SpeciesDiscovery {
   commonNameZh: string;
   scientificName: string;
   /**
-   * Generalized Classical / Canonical Source-Language Original Name (key kept as `classicalGreekName` for global compatibility:
-   * Ancient Greek for Greece, Pre-Qin/Han-Tang classical name + transliteration for China, Classical Nahuatl for Mesoamerica, etc.).
+   * Generalized Classical / Canonical Source-Language Original Name
+   * (Ancient Greek for Greece, Latin/Greek for Rome, Pre-Qin/Han-Tang classical name + transliteration for China, Classical Nahuatl for Mesoamerica, etc.).
    */
-  classicalGreekName: string;
+  classicalSourceName: string;
   kingdom: 'plantae' | 'animalia';
   /** For pre-Linnaean records (< 1735), strictly cite earliest extant textual chronicler / historical witness (never fabricate bureaus). */
   discovererZh: string;
@@ -206,12 +216,14 @@ export interface SpaceSurfaceBase {
 export interface SpaceMission {
   id: string;
   nameZh: string;
+  nameI18n?: LocalizedStringMap;
   agency: string;
   originBodyId: string;
   targetBodyId: string;
   launchYear: number;
   arrivalYear: number;
   missionStatusZh: string;
+  missionStatusI18n?: LocalizedStringMap;
   orbitProbes: SpaceOrbitalProbe[];
   surfaceBases: SpaceSurfaceBase[];
 }
@@ -474,5 +486,16 @@ export interface ChatMessage {
   contextMode?: 'region' | 'global';
   regionLabel?: string;
   isError?: boolean;
+  modelUsed?: string;
 }
+
+export type AiChannelMode = 'default' | 'custom';
+
+export interface AiChannelConfig {
+  mode: AiChannelMode;
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+}
+
 

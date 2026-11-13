@@ -1,12 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { AiModelConfigModal } from './components/AiModelConfigModal';
+import { AtlasBootOverlay } from './components/AtlasBootOverlay';
 import { EntityDetailPopover } from './components/EntityDetailPopover';
 import { GlobalHeaderBar } from './components/GlobalHeaderBar';
 import { GlobalTimelineDock } from './components/GlobalTimelineDock';
+import { IntroStaticPage } from './components/IntroStaticPage';
 import { RegionOverviewChatSidebar } from './components/RegionOverviewChatSidebar';
 import { MapLibreGlobeStage } from './map/MapLibreGlobeStage';
-import { DeepSpaceStage } from './three/DeepSpaceStage';
+import { useOsmResolvedTerritories } from './services/osmBoundaryService';
 import {
+  getAtlasDatasetPresets,
+  setBackendDatasetsBundle,
+  setRuntimeImportedBundle,
+  subscribeAtlasDataLayer,
+} from './shared/atlasDataLayer';
+import {
+  AiChannelConfig,
   AppLanguage,
   CustomHistoricalEvent,
   MapRegionSelection,
@@ -22,8 +32,15 @@ import {
   SUPPORTED_LANGUAGES,
   UI_TEXT,
 } from './i18n/translations';
+import {
+  loadAiChannelConfig,
+  resetAiChannelConfig,
+  saveAiChannelConfig,
+} from './utils/aiChannelStorage';
 import { clamp, stepHistoricalYearWithLoop } from './utils/geoMath';
 import { extractRegionOverview } from './utils/regionSelector';
+
+const LazyDeepSpaceStage = lazy(() => import('./three/DeepSpaceStage'));
 
 const ALL_TERRESTRIAL_LAYERS: OverlayLayerId[] = [
   'population_density',
@@ -33,7 +50,25 @@ const ALL_TERRESTRIAL_LAYERS: OverlayLayerId[] = [
   'mortality_catastrophe',
 ];
 
+function shouldBypassBootOverlay(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('autostart') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function checkIsIntroPath(pathname: string): boolean {
+  const clean = pathname.replace(/\/+$/, '') || '/';
+  return clean === '/intro';
+}
+
 export default function App() {
+  const [isIntroRoute, setIsIntroRoute] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? checkIsIntroPath(window.location.pathname) : false,
+  );
+
   // Language option strictly restricted to Chinese ('zh'), English ('en'), and German ('de')
   const [language, setLanguage] = useState<AppLanguage>(() => {
     try {
@@ -42,8 +77,12 @@ export default function App() {
       return 'zh';
     }
   });
-  // Default year -454 (454 BCE) frames the Classical Athens test dataset on the global timeline
-  const [currentYear, setCurrentYear] = useState<number>(-454);
+
+  // Initial year derived from the unified data layer
+  const [currentYear, setCurrentYear] = useState<number>(() => {
+    const firstPreset = getAtlasDatasetPresets()[0];
+    return firstPreset ? firstPreset.defaultYear : -454;
+  });
   const [selectedRange, setSelectedRange] = useState<TimeRangeSelection>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<1 | 5>(1);
@@ -54,13 +93,104 @@ export default function App() {
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<MapRegionSelection | null>(null);
   const [drawToolMode, setDrawToolMode] = useState<RegionDrawToolMode>('none');
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
+  );
   const [customEvents, setCustomEvents] = useState<CustomHistoricalEvent[]>([]);
+  const [dataLayerRev, setDataLayerRev] = useState<number>(0);
   const [hoverCoords, setHoverCoords] = useState<[number, number] | null>(null);
   const [cameraCommand, setCameraCommand] = useState<{
     id: number;
-    kind: 'zoom_in' | 'zoom_out' | 'reset_north';
+    kind: 'zoom_in' | 'zoom_out' | 'reset_north' | 'fly_to';
+    center?: [number, number];
+    zoom?: number;
   } | null>(null);
+
+  // User-configurable AI API & Gemini Model Channel (defaults to server Gemini 4 Hydrogen)
+  const [aiConfig, setAiConfig] = useState<AiChannelConfig>(() => loadAiChannelConfig());
+  const [aiModalOpen, setAiModalOpen] = useState<boolean>(false);
+
+  const navigateTo = useCallback((nextPath: '/' | '/intro') => {
+    if (typeof window === 'undefined') return;
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, '', nextPath);
+    }
+    setIsIntroRoute(checkIsIntroPath(nextPath));
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setIsIntroRoute(checkIsIntroPath(window.location.pathname));
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    return subscribeAtlasDataLayer(() => {
+      setDataLayerRev((r) => r + 1);
+    });
+  }, []);
+
+  useEffect(() => {
+    let wasDesktop = window.innerWidth >= 1024;
+    const onResize = () => {
+      const isNowDesktop = window.innerWidth >= 1024;
+      if (wasDesktop && !isNowDesktop) {
+        setSidebarOpen(false);
+      } else if (!wasDesktop && isNowDesktop) {
+        setSidebarOpen(true);
+      }
+      wasDesktop = isNowDesktop;
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Entry Boot Sequence: stays active until fine-grained OSM territory parcels are loaded & rendered on the 3D Globe
+  const [bootDismissed, setBootDismissed] = useState<boolean>(() => shouldBypassBootOverlay());
+  const [mapStyleReady, setMapStyleReady] = useState<boolean>(false);
+  const [parcelsRendered, setParcelsRendered] = useState<boolean>(false);
+  const [minBootElapsed, setMinBootElapsed] = useState<boolean>(false);
+
+  const { loadingSnapshot: osmSnapshot } = useOsmResolvedTerritories(currentYear);
+
+  // Minimum optical calibration settle (420ms) + airgapped failsafe timeout (8500ms)
+  useEffect(() => {
+    if (isIntroRoute || bootDismissed) return;
+    const minTimer = window.setTimeout(() => {
+      setMinBootElapsed(true);
+    }, 420);
+    const failsafeTimer = window.setTimeout(() => {
+      setParcelsRendered(true);
+      setMinBootElapsed(true);
+      setBootDismissed(true);
+    }, 8500);
+    return () => {
+      window.clearTimeout(minTimer);
+      window.clearTimeout(failsafeTimer);
+    };
+  }, [bootDismissed, isIntroRoute]);
+
+  // Dismiss entry loader smoothly once fine-grained parcels are rendered on the globe
+  useEffect(() => {
+    if (isIntroRoute || bootDismissed) return;
+    if (parcelsRendered && minBootElapsed) {
+      const settleTimer = window.setTimeout(() => {
+        setBootDismissed(true);
+      }, 140);
+      return () => window.clearTimeout(settleTimer);
+    }
+  }, [bootDismissed, parcelsRendered, minBootElapsed, isIntroRoute]);
+
+  // Pre-warm lazy DeepSpaceStage Three.js chunk during browser idle time AFTER initial globe boot finishes
+  useEffect(() => {
+    if (isIntroRoute || !bootDismissed) return;
+    const idleTimer = window.setTimeout(() => {
+      void import('./three/DeepSpaceStage');
+    }, 1200);
+    return () => window.clearTimeout(idleTimer);
+  }, [bootDismissed, isIntroRoute]);
 
   useEffect(() => {
     try {
@@ -73,27 +203,34 @@ export default function App() {
     document.title = UI_TEXT[language].pageTitle;
   }, [language]);
 
-  // Load extensible `data/events/custom_events.json` via server (skips cleanly if empty)
+  // Load all backend-detected datasets (`datasetsBundle`), runtime `bundle`, and `customEvents` uniformly
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/overview-config')
+    fetch(`/api/overview-config?lang=${encodeURIComponent(language)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!cancelled && data && Array.isArray(data.customEvents)) {
+        if (cancelled || !data) return;
+        if (Array.isArray(data.customEvents)) {
           setCustomEvents(data.customEvents);
+        }
+        if (data.datasetsBundle && typeof data.datasetsBundle === 'object') {
+          setBackendDatasetsBundle(data.datasetsBundle);
+        }
+        if (data.bundle && typeof data.bundle === 'object') {
+          setRuntimeImportedBundle(data.bundle);
         }
       })
       .catch(() => {
-        // Optional extension files default to empty
+        // Optional extension files default to built-in merged dataset layer
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [language]);
 
   // Automatic 1-year precision playback (loops within selectedRange when active)
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying || isIntroRoute) return;
     const intervalMs = playbackSpeed === 5 ? 90 : 320;
     const timer = window.setInterval(() => {
       setCurrentYear((prev) => {
@@ -105,7 +242,7 @@ export default function App() {
       });
     }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [isPlaying, playbackSpeed, selectedRange]);
+  }, [isPlaying, playbackSpeed, selectedRange, isIntroRoute]);
 
   const overview = useMemo(
     () =>
@@ -117,7 +254,8 @@ export default function App() {
         customEvents,
         language,
       }),
-    [currentYear, selectedRange, activeLayers, selectedRegion, customEvents, language],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentYear, selectedRange, activeLayers, selectedRegion, customEvents, language, dataLayerRev],
   );
 
   const handleSelectRegion = useCallback((region: MapRegionSelection | null) => {
@@ -125,6 +263,16 @@ export default function App() {
     if (region) {
       setSidebarOpen(true);
     }
+  }, []);
+
+  const handleSaveAiConfig = useCallback((next: AiChannelConfig) => {
+    saveAiChannelConfig(next);
+    setAiConfig(next);
+  }, []);
+
+  const handleResetAiConfig = useCallback(() => {
+    const fallback = resetAiChannelConfig();
+    setAiConfig(fallback);
   }, []);
 
   const handleChangeSelectedRange = useCallback((range: TimeRangeSelection) => {
@@ -182,24 +330,58 @@ export default function App() {
     setCameraCommand({ id: Date.now() + Math.random(), kind });
   }, []);
 
+  const handleMapStyleReady = useCallback(() => {
+    setMapStyleReady(true);
+  }, []);
+
+  const handleInitialParcelsReady = useCallback(() => {
+    setParcelsRendered(true);
+  }, []);
+
+  if (isIntroRoute) {
+    return (
+      <IntroStaticPage
+        language={language}
+        onChangeLanguage={setLanguage}
+        onLaunchAtlas={() => navigateTo('/')}
+      />
+    );
+  }
+
   return (
     <main
-      className="relative w-screen h-screen overflow-hidden bg-[#06080D] text-slate-100 select-none"
+      className="relative w-screen h-screen overflow-hidden bg-[#04060B] text-slate-100 select-none"
       data-lang={language}
       data-projection={projectionMode}
       data-active-layers={activeLayers.length > 0 ? activeLayers.join(',') : 'polity_only'}
       data-space-stage={spaceStage}
       data-range-active={selectedRange ? 'true' : 'false'}
       data-region-selected={selectedRegion ? selectedRegion.kind : 'none'}
+      data-boot-ready={bootDismissed ? 'true' : 'false'}
+      data-ai-channel={aiConfig.mode}
     >
-      {/* Top Precision Coordinate, Language Selector & Multi-Layer Command Bar */}
+      {/* Entry Geodesic Calibration Overlay (Earth + Compass animation only, active until fine OSM parcels render) */}
+      <AtlasBootOverlay
+        language={language}
+        visible={!bootDismissed}
+        mapStyleReady={mapStyleReady}
+        parcelsRendered={parcelsRendered}
+        osmSnapshot={osmSnapshot}
+      />
+
+      {/* Top Live Coordinate Readout, /intro Entry, Language Selector & Multi-Layer Command Bar */}
       <GlobalHeaderBar
         language={language}
         onChangeLanguage={setLanguage}
+        currentYear={currentYear}
         activeLayers={activeLayers}
         projectionMode={projectionMode}
         spaceStage={spaceStage}
         hoverCoords={hoverCoords}
+        onOpenIntro={() => {
+          setIsPlaying(false);
+          navigateTo('/intro');
+        }}
         onToggleLayer={handleToggleLayer}
         onClearLayers={handleClearLayers}
         onSelectTerrestrialLayers={handleSelectTerrestrialLayers}
@@ -233,6 +415,8 @@ export default function App() {
                 onSelectRegion={handleSelectRegion}
                 onFinishDrawTool={() => setDrawToolMode('none')}
                 onHoverCoordsChange={setHoverCoords}
+                onMapStyleReady={handleMapStyleReady}
+                onInitialParcelsReady={handleInitialParcelsReady}
               />
             </motion.div>
           ) : (
@@ -244,15 +428,21 @@ export default function App() {
               transition={{ duration: 0.26 }}
               className="w-full h-full"
             >
-              <DeepSpaceStage
-                language={language}
-                currentYear={currentYear}
-                spaceStage={spaceStage}
-                focusedBodyId={focusedBodyId}
-                cameraCommand={cameraCommand}
-                onSpaceStageChange={handleSpaceStageChange}
-                onSelectEntity={setSelectedEntity}
-              />
+              <Suspense fallback={<div className="w-full h-full bg-[#04060B]" />}>
+                <LazyDeepSpaceStage
+                  language={language}
+                  currentYear={currentYear}
+                  spaceStage={spaceStage}
+                  focusedBodyId={focusedBodyId}
+                  cameraCommand={
+                    cameraCommand && cameraCommand.kind !== 'fly_to'
+                      ? { id: cameraCommand.id, kind: cameraCommand.kind }
+                      : null
+                  }
+                  onSpaceStageChange={handleSpaceStageChange}
+                  onSelectEntity={setSelectedEntity}
+                />
+              </Suspense>
             </motion.div>
           )}
         </AnimatePresence>
@@ -279,6 +469,8 @@ export default function App() {
           currentYear={currentYear}
           selectedRange={selectedRange}
           activeLayers={activeLayers}
+          aiConfig={aiConfig}
+          onOpenAiConfig={() => setAiModalOpen(true)}
           onSetDrawToolMode={setDrawToolMode}
           onClearRegion={() => {
             setSelectedRegion(null);
@@ -286,6 +478,16 @@ export default function App() {
           }}
         />
       )}
+
+      {/* AI API & Gemini Model Channel Configuration Modal */}
+      <AiModelConfigModal
+        language={language}
+        isOpen={aiModalOpen}
+        config={aiConfig}
+        onSave={handleSaveAiConfig}
+        onReset={handleResetAiConfig}
+        onClose={() => setAiModalOpen(false)}
+      />
 
       {/* Bottom Collapsible Precision Optical Chronometer */}
       <GlobalTimelineDock

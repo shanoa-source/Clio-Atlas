@@ -252,3 +252,69 @@ export function buildOfflineDarkMatterStyle(
     true,
   );
 }
+
+const CARTO_SESSION_CACHE_KEY = 'civ_atlas_carto_raw_style_v1';
+let cachedRawCartoStyle: Record<string, any> | null = null;
+let inflightCartoPromise: Promise<Record<string, any> | null> | null = null;
+
+/**
+ * Pre-warms and caches the CARTO Dark Matter style JSON so MapLibre initializes once cleanly
+ * without tearing down and rebuilding WebGL sources/layers on boot.
+ */
+export function preloadCartoDarkMatterStyle(timeoutMs = 1600): Promise<Record<string, any> | null> {
+  if (cachedRawCartoStyle) {
+    return Promise.resolve(cachedRawCartoStyle);
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.sessionStorage.getItem(CARTO_SESSION_CACHE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.layers)) {
+          cachedRawCartoStyle = parsed;
+          return Promise.resolve(parsed);
+        }
+      }
+    } catch {
+      // Ignore storage access errors
+    }
+  }
+
+  if (!inflightCartoPromise && typeof fetch === 'function') {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer =
+      ctrl && timeoutMs > 0 ? globalThis.setTimeout(() => ctrl.abort(), timeoutMs) : null;
+
+    inflightCartoPromise = fetch(CARTO_DARK_MATTER_STYLE_URL, {
+      signal: ctrl?.signal,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (json && typeof json === 'object' && Array.isArray(json.layers)) {
+          cachedRawCartoStyle = json;
+          if (typeof window !== 'undefined') {
+            try {
+              window.sessionStorage.setItem(CARTO_SESSION_CACHE_KEY, JSON.stringify(json));
+            } catch {
+              // Ignore quota errors
+            }
+          }
+          return json as Record<string, any>;
+        }
+        return null;
+      })
+      .catch(() => null)
+      .finally(() => {
+        if (timer !== null) globalThis.clearTimeout(timer);
+        inflightCartoPromise = null;
+      });
+  }
+
+  return inflightCartoPromise ?? Promise.resolve(null);
+}
+
+if (typeof window !== 'undefined' && typeof fetch === 'function') {
+  void preloadCartoDarkMatterStyle();
+}
+

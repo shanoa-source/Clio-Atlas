@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowUpRight,
   CircleDot,
   PanelRightClose,
   PanelRightOpen,
   Send,
+  SlidersHorizontal,
   SquareDashedMousePointer,
   Trash2,
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  AiChannelConfig,
   AppLanguage,
   ChatMessage,
   MapRegionSelection,
@@ -24,6 +27,7 @@ import {
   getShortPolityLayerName,
   UI_TEXT,
 } from '../i18n/translations';
+import { formatDisplayModelName } from '../utils/aiChannelStorage';
 
 interface RegionOverviewChatSidebarProps {
   language: AppLanguage;
@@ -35,6 +39,8 @@ interface RegionOverviewChatSidebarProps {
   currentYear: number;
   selectedRange: TimeRangeSelection;
   activeLayers: OverlayLayerId[];
+  aiConfig: AiChannelConfig;
+  onOpenAiConfig: () => void;
   onSetDrawToolMode: (mode: RegionDrawToolMode) => void;
   onClearRegion: () => void;
 }
@@ -55,6 +61,7 @@ function renderFormattedChatText(text: string): React.ReactNode {
 
 function buildLayerAwareQuickPrompts(
   hasSelection: boolean,
+  activePolityLabel: string | null,
   activeLayers: OverlayLayerId[],
   lang: AppLanguage,
 ): string[] {
@@ -66,7 +73,7 @@ function buildLayerAwareQuickPrompts(
       return [
         hasSelection
           ? 'Analyze how population density correlates with nighttime radiance in this region'
-          : 'Compare urban olive-oil lamp density vs. Laurion smelting furnace radiance',
+          : 'Compare urban oil-lamp density vs. harbor beacons and smelting furnace radiance',
         hasSelection
           ? 'How do urban lamps differ from harbor beacons and mining fires here?'
           : 'Why do lower-density mining zones still emit intense nighttime light?',
@@ -90,13 +97,14 @@ function buildLayerAwareQuickPrompts(
         `Interpret the primary historical sources behind ${singleName}`,
       ];
     }
+    const polityTarget = activePolityLabel || 'the active polity';
     return hasSelection
       ? [
           'Summarize the key historical events in this selected region and timeframe',
-          'Analyze this region’s political and naval role in the Athenian alliance',
+          `Analyze this region’s political and strategic role within ${polityTarget}`,
         ]
       : [
-          'Summarize the current Athenian polity phase and territorial reach',
+          `Summarize the current phase and territorial reach of ${polityTarget}`,
           'What major historical turning points define this year?',
         ];
   }
@@ -106,7 +114,7 @@ function buildLayerAwareQuickPrompts(
       return [
         hasSelection
           ? 'Korrelation von Bevölkerungsdichte und Nachtbeleuchtung im Auswahlgebiet analysieren'
-          : 'Städtische Öllampendichte mit den 24h-Silberschmelzöfen von Laurion vergleichen',
+          : 'Städtische Öllampendichte mit Hafenleuchtfeuern und 24h-Schmelzöfen vergleichen',
         hasSelection
           ? 'Wie unterscheiden sich Stadtlichter, Hafenfeuer und Hüttenöfen hier?'
           : 'Warum zeigen dünner besiedelte Bergbaureviere dennoch starke Nachtstrahlung?',
@@ -130,13 +138,14 @@ function buildLayerAwareQuickPrompts(
         `Quellenbefunde zur Ebene ${singleName} interpretieren`,
       ];
     }
+    const polityTargetDe = activePolityLabel || 'der aktiven Herrschaft';
     return hasSelection
       ? [
           'Wichtigste historische Ereignisse dieses Gebiets zusammenfassen',
-          'Politische und maritime Rolle dieses Gebiets im Seebund erläutern',
+          `Politische und maritime Rolle dieses Gebiets in ${polityTargetDe} erläutern`,
         ]
       : [
-          'Aktuelle Phase der athenischen Herrschaft und Reichweite zusammenfassen',
+          `Aktuelle Herrschaftsphase und territoriale Reichweite (${polityTargetDe}) zusammenfassen`,
           'Welche historischen Schlüsselereignisse prägen dieses Jahr?',
         ];
   }
@@ -168,9 +177,10 @@ function buildLayerAwareQuickPrompts(
     ];
   }
 
+  const polityLabelZh = activePolityLabel || '当前政权';
   return hasSelection
-    ? ['概括该选区在当前时间段的核心历史事件', '分析该选区与雅典海上同盟的政治与军事关系']
-    : ['概括当前年份雅典政权阶段与疆域态势', '当前时间点有哪些关键历史事件？'];
+    ? ['概括该选区在当前时间段的核心历史事件', `分析该选区在「${polityLabelZh}」疆域体系中的政治与海陆地位`]
+    : [`概括当前年份「${polityLabelZh}」阶段特征与疆域态势`, '当前时间点有哪些关键历史转折事件？'];
 }
 
 export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps> = ({
@@ -183,6 +193,8 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
   currentYear,
   selectedRange,
   activeLayers,
+  aiConfig,
+  onOpenAiConfig,
   onSetDrawToolMode,
   onClearRegion,
 }) => {
@@ -202,9 +214,23 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
   }, [activeLayers, language]);
 
   const quickPrompts = useMemo(
-    () => buildLayerAwareQuickPrompts(overview.hasSelection, activeLayers, language),
-    [overview.hasSelection, activeLayers, language],
+    () =>
+      buildLayerAwareQuickPrompts(
+        overview.hasSelection,
+        overview.activePolityNameZh,
+        activeLayers,
+        language,
+      ),
+    [overview.hasSelection, overview.activePolityNameZh, activeLayers, language],
   );
+
+  const activeChannelBadgeLabel = useMemo(() => {
+    const modelLabel = formatDisplayModelName(aiConfig.model);
+    if (aiConfig.mode === 'custom') {
+      return `${ui.aiChannelCustomShort} · ${modelLabel}`;
+    }
+    return modelLabel;
+  }, [aiConfig, ui.aiChannelCustomShort]);
 
   const sendQuestion = async (rawQuestion: string) => {
     const trimmed = rawQuestion.trim();
@@ -233,6 +259,15 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
           message: trimmed,
           language,
           history: priorHistory,
+          aiConfig:
+            aiConfig.mode === 'custom'
+              ? {
+                  mode: 'custom',
+                  apiKey: aiConfig.apiKey,
+                  baseUrl: aiConfig.baseUrl,
+                  model: aiConfig.model,
+                }
+              : { mode: 'default' },
           mapState: {
             currentYear,
             selectedRange,
@@ -260,6 +295,7 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
         text: String(data.reply || ''),
         contextMode: data.contextMode === 'region' ? 'region' : 'global',
         regionLabel: regionSummary,
+        modelUsed: typeof data.modelUsed === 'string' ? data.modelUsed : undefined,
       };
       setMessages((prev) => [...prev, modelMsg]);
     } catch (err: any) {
@@ -290,13 +326,13 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
             initial={{ opacity: 0, x: 12 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 12 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-auto fixed top-16 right-4 z-25 flex items-center gap-1.5"
+            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+            className="pointer-events-auto fixed top-14 right-3 sm:right-4 z-25 flex items-center gap-1.5"
           >
             <button
               type="button"
               onClick={onToggleOpen}
-              className="flex items-center gap-2 h-9 px-3.5 rounded-xl bg-[#090C12]/96 border border-white/[0.1] text-xs font-medium text-slate-200 hover:text-white hover:border-white/[0.18] transition-colors shadow-[0_12px_30px_rgba(0,0,0,0.75)] cursor-pointer whitespace-nowrap shrink-0"
+              className="flex items-center gap-2 h-9 px-3.5 rounded-lg atlas-chassis atlas-reticle text-xs font-medium text-slate-200 hover:text-white hover:border-sky-400/50 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               aria-label={ui.expandSidebarAria}
             >
               <PanelRightOpen className="w-4 h-4 text-sky-400" />
@@ -316,7 +352,7 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
         )}
       </AnimatePresence>
 
-      {/* Right Fixed / Collapsible Sidebar (Upper: Selected Region Overview | Lower: AI Chat Stream + Bottom Input) */}
+      {/* Right Fixed / Collapsible Aerospace Telemetry & AI Analyst Sidebar */}
       <AnimatePresence initial={false}>
         {isOpen && (
           <motion.aside
@@ -326,11 +362,11 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             aria-label={ui.sidebarAria}
-            className="pointer-events-auto fixed top-16 bottom-3.5 right-4 z-25 w-[356px] max-w-[calc(100vw-2rem)] flex flex-col rounded-2xl bg-[#090C12]/96 border border-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_22px_52px_rgba(0,0,0,0.86)] overflow-hidden"
+            className="pointer-events-auto fixed top-14 bottom-3 right-3 sm:right-4 z-25 w-[356px] max-w-[calc(100vw-1.5rem)] flex flex-col rounded-xl atlas-chassis atlas-reticle overflow-hidden"
           >
             {/* Top Toolbar: Explicit Box / Circle Region Selection Controls + Collapse */}
             <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 border-b border-white/[0.08] shrink-0">
-              <h2 className="text-xs font-semibold text-slate-100 tracking-wide whitespace-nowrap">
+              <h2 className="text-xs font-semibold text-slate-100 tracking-tight whitespace-nowrap">
                 {ui.sidebarHeading}
               </h2>
 
@@ -340,10 +376,10 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                   onClick={() => onSetDrawToolMode(drawToolMode === 'box' ? 'none' : 'box')}
                   aria-pressed={drawToolMode === 'box'}
                   aria-label={ui.boxSelectAria}
-                  className={`flex items-center gap-1 h-7 px-2 rounded-lg border text-xs transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`flex items-center gap-1 h-7 px-2 rounded-md border text-xs transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     drawToolMode === 'box'
-                      ? 'bg-sky-400/20 border-sky-400/55 text-sky-200 font-medium'
-                      : 'bg-[#05070B] border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.06]'
+                      ? 'bg-sky-400/[0.18] border-sky-400/55 text-sky-200 font-medium'
+                      : 'atlas-well text-slate-300 hover:text-white hover:bg-white/[0.05]'
                   }`}
                 >
                   <SquareDashedMousePointer className="w-3.5 h-3.5" />
@@ -355,10 +391,10 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                   onClick={() => onSetDrawToolMode(drawToolMode === 'circle' ? 'none' : 'circle')}
                   aria-pressed={drawToolMode === 'circle'}
                   aria-label={ui.circleSelectAria}
-                  className={`flex items-center gap-1 h-7 px-2 rounded-lg border text-xs transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`flex items-center gap-1 h-7 px-2 rounded-md border text-xs transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     drawToolMode === 'circle'
-                      ? 'bg-sky-400/20 border-sky-400/55 text-sky-200 font-medium'
-                      : 'bg-[#05070B] border-white/[0.08] text-slate-300 hover:text-white hover:bg-white/[0.06]'
+                      ? 'bg-sky-400/[0.18] border-sky-400/55 text-sky-200 font-medium'
+                      : 'atlas-well text-slate-300 hover:text-white hover:bg-white/[0.05]'
                   }`}
                 >
                   <CircleDot className="w-3.5 h-3.5" />
@@ -370,7 +406,7 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                     type="button"
                     onClick={onClearRegion}
                     aria-label={ui.clearRegionAria}
-                    className="flex items-center gap-0.5 h-7 px-2 rounded-lg bg-[#05070B] border border-white/[0.08] text-xs text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    className="flex items-center gap-0.5 h-7 px-2 rounded-md atlas-well text-xs text-slate-400 hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer whitespace-nowrap shrink-0"
                   >
                     <X className="w-3 h-3" />
                     <span>{ui.clearRegionBtn}</span>
@@ -381,22 +417,22 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                   type="button"
                   onClick={onToggleOpen}
                   aria-label={ui.collapseSidebarAria}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer shrink-0"
+                  className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer shrink-0"
                 >
                   <PanelRightClose className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* UPPER HALF: Selected Region Overview + Layer-Synchronized Events Table */}
+            {/* UPPER HALF: Selected Region Overview + Layer-Synchronized Events Ledger */}
             <section
               aria-label={ui.overviewSectionAria}
               className="flex-[1.08] min-h-0 flex flex-col border-b border-white/[0.08]"
             >
-              {/* Region Header & Quantitative Metrics */}
+              {/* Region Header & Quantitative Telemetry Strip */}
               <div className="px-3.5 py-2.5 border-b border-white/[0.06] shrink-0">
                 <div
-                  className="text-sm font-semibold text-white truncate"
+                  className="text-sm font-semibold text-white tracking-tight truncate"
                   data-testid="selected-region-title"
                 >
                   {overview.regionTitleZh}
@@ -419,13 +455,13 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                   </span>
                 </div>
 
-                {/* Compact Tabular Layer Metrics */}
-                <div className="grid grid-cols-4 gap-1.5 mt-2.5 pt-2 border-t border-white/[0.06]">
-                  <div>
+                {/* Hairline-Divided Quantitative Telemetry Strip */}
+                <div className="grid grid-cols-4 divide-x divide-white/[0.07] mt-2.5 pt-2.5 border-t border-white/[0.07]">
+                  <div className="pr-2">
                     <div className="text-[10px] text-slate-500 truncate">
                       {ui.metricTerritories}
                     </div>
-                    <div className="text-xs font-semibold font-mono tabular-nums text-slate-200 mt-0.5">
+                    <div className="text-xs font-semibold font-mono tabular-nums text-slate-100 mt-0.5">
                       {overview.metrics.matchedTerritoryNames.length}
                       {ui.metricTerritoriesUnit && (
                         <span className="text-[10px] font-normal text-slate-500 ml-0.5">
@@ -434,23 +470,23 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                       )}
                     </div>
                   </div>
-                  <div>
+                  <div className="px-2">
                     <div className="text-[10px] text-slate-500 truncate">{ui.metricPeakPop}</div>
-                    <div className="text-xs font-semibold font-mono tabular-nums text-slate-200 mt-0.5">
+                    <div className="text-xs font-semibold font-mono tabular-nums text-slate-100 mt-0.5">
                       {overview.metrics.peakDensityPerKm2 ?? '—'}
                       {overview.metrics.peakDensityPerKm2 !== null && (
                         <span className="text-[10px] font-normal text-slate-500 ml-0.5">/km²</span>
                       )}
                     </div>
                   </div>
-                  <div>
+                  <div className="px-2">
                     <div className="text-[10px] text-slate-500 truncate">
                       {activeLayers.includes('night_lights') &&
                       !activeLayers.includes('transport_routes')
                         ? ui.metricPeakLight
                         : ui.metricVoyages}
                     </div>
-                    <div className="text-xs font-semibold font-mono tabular-nums text-slate-200 mt-0.5">
+                    <div className="text-xs font-semibold font-mono tabular-nums text-slate-100 mt-0.5">
                       {activeLayers.includes('night_lights') &&
                       !activeLayers.includes('transport_routes') ? (
                         overview.metrics.peakNightLightPct !== null ? (
@@ -473,16 +509,16 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                       )}
                     </div>
                   </div>
-                  <div>
+                  <div className="pl-2">
                     <div className="text-[10px] text-slate-500 truncate">{ui.metricCasualties}</div>
-                    <div className="text-xs font-semibold font-mono tabular-nums text-slate-200 mt-0.5">
+                    <div className="text-xs font-semibold font-mono tabular-nums text-slate-100 mt-0.5">
                       {formatCompactCountByLang(overview.metrics.totalEstimatedDeaths, language)}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Scrollable Historical Events & Layer Records Table */}
+              {/* Scrollable Historical Events & Layer Records Ledger */}
               <div className="flex-1 min-h-0 flex flex-col">
                 <div className="flex items-center justify-between px-3.5 py-1.5 bg-white/[0.02] border-b border-white/[0.05] shrink-0">
                   <span className="text-[11px] font-medium text-slate-300">
@@ -496,14 +532,17 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                   </span>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto px-3.5 divide-y divide-white/[0.06]">
+                <div className="flex-1 min-h-0 overflow-y-auto atlas-scroll px-3.5 divide-y divide-white/[0.06]">
                   {overview.events.length === 0 ? (
                     <div className="py-6 text-center text-xs text-slate-500 leading-relaxed">
                       {ui.emptyEventsHint}
                     </div>
                   ) : (
                     overview.events.map((ev) => (
-                      <div key={ev.id} className="py-2">
+                      <div
+                        key={ev.id}
+                        className="py-2 -mx-1 px-1 rounded transition-colors hover:bg-white/[0.02]"
+                      >
                         <div className="flex items-center justify-between gap-2 text-[11px]">
                           <div className="flex items-center gap-1.5 min-w-0 truncate">
                             <span className="font-mono tabular-nums text-sky-300 truncate">
@@ -533,9 +572,9 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
               </div>
             </section>
 
-            {/* LOWER HALF: AI Chat Message Stream + Fixed Bottom Input Bar */}
+            {/* LOWER HALF: AI Chat Message Stream + Recessed Command Input Bar */}
             <section aria-label={ui.chatSectionAria} className="flex-1 min-h-0 flex flex-col">
-              <div className="flex items-center justify-between px-3.5 py-2 border-b border-white/[0.06] shrink-0">
+              <div className="flex items-center justify-between gap-2 px-3.5 py-2 border-b border-white/[0.06] shrink-0">
                 <div className="flex items-center gap-1.5 text-[11px] min-w-0">
                   <span className="font-semibold text-slate-200 shrink-0">{ui.chatHeading}</span>
                   <span className="text-slate-600 shrink-0" aria-hidden="true">
@@ -550,27 +589,46 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                   </span>
                 </div>
 
-                {messages.length > 0 && (
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => setMessages([])}
-                    aria-label={ui.clearChatAria}
-                    className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer shrink-0"
+                    onClick={onOpenAiConfig}
+                    aria-label={ui.aiChannelAria}
+                    data-testid="ai-config-trigger"
+                    className={`flex items-center gap-1 h-6 px-2 rounded-md border text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                      aiConfig.mode === 'custom'
+                        ? 'bg-sky-400/[0.15] border-sky-400/50 text-sky-200'
+                        : 'atlas-well text-slate-300 hover:text-white hover:border-sky-400/40'
+                    }`}
                   >
-                    <Trash2 className="w-3 h-3" />
-                    <span>{ui.clearChatBtn}</span>
+                    <SlidersHorizontal className="w-3 h-3 text-sky-400 shrink-0" />
+                    <span className="max-w-[126px] truncate" data-testid="ai-active-model-label">
+                      {activeChannelBadgeLabel}
+                    </span>
                   </button>
-                )}
+
+                  {messages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setMessages([])}
+                      aria-label={ui.clearChatAria}
+                      className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer shrink-0"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>{ui.clearChatBtn}</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div
                 role="log"
                 aria-label={ui.chatLogAria}
                 aria-live="polite"
-                className="flex-1 min-h-0 overflow-y-auto px-3.5 py-2.5 space-y-2.5"
+                className="flex-1 min-h-0 overflow-y-auto atlas-scroll px-3.5 py-2.5 space-y-2.5"
               >
                 {messages.length === 0 ? (
-                  <div className="space-y-2 pt-1">
+                  <div className="space-y-2 pt-0.5">
                     <p className="text-xs text-slate-400 leading-relaxed">
                       {overview.hasSelection
                         ? ui.chatEmptyRegionHint(
@@ -586,9 +644,10 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                           key={prompt}
                           type="button"
                           onClick={() => void sendQuestion(prompt)}
-                          className="text-left px-2.5 py-1.5 rounded-lg bg-[#05070B] hover:bg-white/[0.05] border border-white/[0.08] text-xs text-slate-300 hover:text-white transition-colors cursor-pointer truncate"
+                          className="group flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md atlas-well hover:border-sky-400/45 text-xs text-slate-300 hover:text-white transition-colors cursor-pointer"
                         >
-                          {prompt}
+                          <span className="truncate">{prompt}</span>
+                          <ArrowUpRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-sky-400 shrink-0 transition-colors" />
                         </button>
                       ))}
                     </div>
@@ -603,12 +662,12 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                     >
                       <div
                         data-testid={msg.role === 'model' ? 'chat-model-reply' : 'chat-user-msg'}
-                        className={`max-w-[92%] rounded-xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap ${
+                        className={`max-w-[92%] rounded-lg px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap ${
                           msg.role === 'user'
-                            ? 'bg-sky-400/18 border border-sky-400/35 text-slate-100'
+                            ? 'bg-sky-400/[0.16] border border-sky-400/35 text-slate-100'
                             : msg.isError
                               ? 'bg-rose-950/45 border border-rose-500/35 text-rose-200'
-                              : 'bg-white/[0.03] border border-white/[0.08] text-slate-200'
+                              : 'atlas-well text-slate-200'
                         }`}
                       >
                         {renderFormattedChatText(msg.text)}
@@ -624,15 +683,15 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                 )}
 
                 {isSending && (
-                  <div className="text-xs text-slate-400 py-1">{ui.sendingHint}</div>
+                  <div className="text-xs text-slate-400 py-1 font-mono">{ui.sendingHint}</div>
                 )}
                 <div ref={messageEndRef} />
               </div>
 
-              {/* Fixed Bottom Input Bar */}
+              {/* Fixed Bottom Recessed Command Input Bar */}
               <form
                 onSubmit={handleSubmit}
-                className="flex items-center gap-2 p-2.5 border-t border-white/[0.08] bg-[#06080D] shrink-0"
+                className="flex items-center gap-2 p-2.5 border-t border-white/[0.08] bg-[#04060A]/90 shrink-0"
               >
                 <input
                   type="text"
@@ -645,14 +704,14 @@ export const RegionOverviewChatSidebar: React.FC<RegionOverviewChatSidebarProps>
                   }
                   aria-label={ui.chatInputAria}
                   data-testid="chat-question-input"
-                  className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-[#0B0F17] border border-white/[0.1] text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-sky-400"
+                  className="flex-1 min-w-0 h-8 px-2.5 rounded-md atlas-well text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-sky-400/70"
                 />
                 <button
                   type="submit"
                   disabled={isSending || !inputText.trim()}
                   aria-label={ui.sendAria}
                   data-testid="chat-submit-btn"
-                  className="flex items-center gap-1 h-8 px-3 rounded-lg bg-sky-400 hover:bg-sky-300 disabled:opacity-40 disabled:pointer-events-none text-xs font-semibold text-slate-950 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                  className="flex items-center gap-1 h-8 px-3 rounded-md bg-sky-400 hover:bg-sky-300 disabled:opacity-40 disabled:pointer-events-none text-xs font-semibold text-slate-950 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>{ui.sendBtn}</span>

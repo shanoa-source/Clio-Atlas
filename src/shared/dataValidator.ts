@@ -85,6 +85,21 @@ const VALID_SURFACE_BASE_KINDS = new Set(['lander', 'rover', 'base']);
 const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
 const OSM_ID_RE = /^[RW][0-9]+$/;
 const COUNTRY_CODE_RE = /^[A-Za-z]{2}$/;
+const DANGEROUS_SVG_RE =
+  /<\s*script\b|javascript:|vbscript:|\bon[a-z]+\s*=|<\s*foreignobject\b|<\s*iframe\b|<\s*object\b|<\s*embed\b/i;
+const VALID_FLAG_ASSET_RE =
+  /^(https?:\/\/[^\s]+|\/[^\s]+|data:image\/(svg\+xml|png|jpeg|webp)[;,][^\s]+)$/i;
+
+export function sanitizeInlineFlagSvg(rawSvg: string): string | null {
+  const trimmed = rawSvg.trim();
+  if (!trimmed.toLowerCase().startsWith('<svg') || !trimmed.toLowerCase().includes('</svg>')) {
+    return null;
+  }
+  if (DANGEROUS_SVG_RE.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
 
 /** Pre-Linnaean (< 1735 CE) guardrails against LLM-hallucinated placeholders or fictional bureaus */
 const PLACEHOLDER_DISCOVERER_RE =
@@ -736,12 +751,61 @@ export function validateImportPayload(
         if (typeof raw.borderColor !== 'string' || !HEX_COLOR_RE.test(raw.borderColor)) {
           errors.push({ path: `${p}.borderColor`, message: 'Must be a #RRGGBB hex color.' });
         }
-        if (typeof raw.flagId !== 'string' || !VALID_FLAG_IDS.has(raw.flagId as FlagVariantId)) {
+        let flagId: FlagVariantId | undefined;
+        let flagSvg: string | undefined;
+        let flagAsset: string | undefined;
+
+        if (raw.flagId !== undefined && raw.flagId !== '') {
+          if (typeof raw.flagId !== 'string' || !VALID_FLAG_IDS.has(raw.flagId as FlagVariantId)) {
+            errors.push({
+              path: `${p}.flagId`,
+              message: `flagId must be one of: ${Array.from(VALID_FLAG_IDS).join(', ')}.`,
+            });
+          } else {
+            flagId = raw.flagId as FlagVariantId;
+          }
+        }
+
+        if (raw.flagSvg !== undefined && raw.flagSvg !== '') {
+          if (typeof raw.flagSvg !== 'string') {
+            errors.push({ path: `${p}.flagSvg`, message: 'flagSvg must be an inline <svg> string.' });
+          } else {
+            const cleanSvg = sanitizeInlineFlagSvg(raw.flagSvg);
+            if (!cleanSvg) {
+              errors.push({
+                path: `${p}.flagSvg`,
+                message:
+                  'flagSvg must be a valid <svg>...</svg> element without <script>, event handlers, or executable URIs.',
+              });
+            } else {
+              flagSvg = cleanSvg;
+            }
+          }
+        }
+
+        if (raw.flagAsset !== undefined && raw.flagAsset !== '') {
+          if (
+            typeof raw.flagAsset !== 'string' ||
+            DANGEROUS_SVG_RE.test(raw.flagAsset) ||
+            !VALID_FLAG_ASSET_RE.test(raw.flagAsset.trim())
+          ) {
+            errors.push({
+              path: `${p}.flagAsset`,
+              message:
+                'flagAsset must be an https:// URL, root-relative /path, or safe data:image/(svg+xml|png|jpeg|webp) URI.',
+            });
+          } else {
+            flagAsset = raw.flagAsset.trim();
+          }
+        }
+
+        if (!flagId && !flagSvg && !flagAsset) {
           errors.push({
             path: `${p}.flagId`,
-            message: `flagId must be one of: ${Array.from(VALID_FLAG_IDS).join(', ')}.`,
+            message: `At least one of flagId (${Array.from(VALID_FLAG_IDS).join(', ')}), flagSvg, or flagAsset is required.`,
           });
         }
+
         if (!isNonEmptyString(raw.capitalName)) {
           errors.push({ path: `${p}.capitalName`, message: 'capitalName is required.' });
         }
@@ -770,7 +834,9 @@ export function validateImportPayload(
             endYear: raw.endYear,
             representativeColor: raw.representativeColor,
             borderColor: raw.borderColor,
-            flagId: raw.flagId as FlagVariantId,
+            ...(flagId ? { flagId } : {}),
+            ...(flagSvg ? { flagSvg } : {}),
+            ...(flagAsset ? { flagAsset } : {}),
             flagLabel: String(raw.flagLabel ?? '').trim(),
             capitalName: raw.capitalName.trim(),
             ...(capitalNameI18n ? { capitalNameI18n } : {}),
@@ -1282,13 +1348,21 @@ export function validateImportPayload(
           }
         }
 
+        if ('classicalGreekName' in raw && raw.classicalSourceName === undefined) {
+          errors.push({
+            path: `${p}.classicalSourceName`,
+            message:
+              'Field "classicalGreekName" has been renamed to "classicalSourceName"; please use "classicalSourceName".',
+          });
+        }
+
         if (errors.length === beforeCount && coords) {
           const rec: ImportedSpeciesDiscoveryRecord = {
             id: raw.id.trim(),
             commonNameZh: raw.commonNameZh.trim(),
             ...(commonNameI18n ? { commonNameI18n } : {}),
             scientificName: raw.scientificName.trim(),
-            classicalGreekName: String(raw.classicalGreekName ?? '').trim(),
+            classicalSourceName: String(raw.classicalSourceName ?? '').trim(),
             kingdom: raw.kingdom as 'plantae' | 'animalia',
             discovererZh: raw.discovererZh.trim(),
             discovererEn: raw.discovererEn.trim(),

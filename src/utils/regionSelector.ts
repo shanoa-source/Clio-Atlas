@@ -1,14 +1,14 @@
 import {
-  ATHENS_DATA_END_YEAR,
-  ATHENS_DATA_START_YEAR,
-  ATHENS_MORTALITY_CATASTROPHES,
-  ATHENS_NIGHT_LIGHTS,
-  ATHENS_POLITY_PHASES,
-  ATHENS_POPULATION_REGIONS,
-  ATHENS_SPECIES_DISCOVERIES,
-  ATHENS_TERRITORY_REGIONS,
-  ATHENS_TRANSPORT_ROUTES,
-} from '../data/athensClassicalData';
+  computeDatasetYearBounds,
+  getMortalityCatastrophes,
+  getNightLightNodes,
+  getPolityPhases,
+  getPopulationNodes,
+  getSpaceMissions,
+  getSpeciesDiscoveries,
+  getTerritoryRegions,
+  getTransportRoutes,
+} from '../shared/atlasDataLayer';
 import {
   formatNumberByLang,
   formatYearByLang,
@@ -295,21 +295,6 @@ function intervalsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: nu
   return Math.max(aStart, bStart) <= Math.min(aEnd, bEnd);
 }
 
-const TERRITORY_APPROX_BBOX: Record<string, GeoBBox> = {
-  attica_salamis_core: { minLon: 23.32, minLat: 37.64, maxLon: 24.12, maxLat: 38.34 },
-  euboea_cleruchy: { minLon: 22.82, minLat: 37.95, maxLon: 24.62, maxLat: 39.05 },
-  lemnos_imbros_skyros: { minLon: 24.45, minLat: 38.72, maxLon: 26.05, maxLat: 40.28 },
-  cyclades_delos_archipelago: { minLon: 24.25, minLat: 36.32, maxLon: 25.95, maxLat: 37.98 },
-  ionia_lesbos_chios_coast: { minLon: 25.82, minLat: 37.32, maxLon: 27.48, maxLat: 39.42 },
-  samos_democratic_bastion: { minLon: 26.55, minLat: 37.62, maxLon: 27.10, maxLat: 37.84 },
-  chalcidice_thrace_tribute: { minLon: 23.15, minLat: 39.90, maxLon: 25.75, maxLat: 40.92 },
-  hellespont_propontis_bosporus: { minLon: 26.15, minLat: 40.02, maxLon: 29.08, maxLat: 41.12 },
-  caria_rhodes_dorian_hexapolis: { minLon: 26.92, minLat: 35.85, maxLon: 28.30, maxLat: 37.18 },
-  aegina_saronic_control: { minLon: 23.40, minLat: 37.67, maxLon: 23.58, maxLat: 37.79 },
-  naupactus_corinthian_gulf: { minLon: 21.74, minLat: 38.35, maxLon: 21.92, maxLat: 38.46 },
-  melos_island_conquest: { minLon: 24.32, minLat: 36.64, maxLon: 24.56, maxLat: 36.77 },
-};
-
 /**
  * Generates explicit thematic & cross-layer coupling instructions based on the currently overlaid `activeLayers`.
  */
@@ -357,7 +342,7 @@ export function buildActiveLayerFocusDirective(
     }
     if (hasSpecies) {
       directives.push(
-        '- [Species Discovery]: Reference earliest extant textual chroniclers / historical witnesses (for pre-1735 pre-Linnaean records, never invent ancient discoverers or fictional bureaus), binomial + classical source-language names (`classicalGreekName`: Ancient Greek, Pre-Qin/Han-Tang Chinese + transliteration, Classical Nahuatl, etc.), and canonical text/event years.',
+        '- [Species Discovery]: Reference earliest extant textual chroniclers / historical witnesses (for pre-1735 pre-Linnaean records, never invent ancient discoverers or fictional bureaus), binomial + classical source-language names (`classicalSourceName`: Ancient Greek, Latin, Pre-Qin/Han-Tang Chinese + transliteration, Classical Nahuatl, etc.), and canonical text/event years.',
       );
     }
     if (hasSpace) {
@@ -436,7 +421,7 @@ export function buildActiveLayerFocusDirective(
     }
     if (hasSpecies) {
       directives.push(
-        '- [Artenentdeckung]: Nennen Sie für vor-linnéische Arten (< 1735) ausschließlich früheste Textzeugen/Chronisten (keine erfundenen Ämter oder Entdecker), wissenschaftliche sowie klassische Originalsprachennamen (`classicalGreekName`: Altgriechisch, klassisches Chinesisch, Nahuatl usw.) und kanonische Werk-/Ereignisjahre.',
+        '- [Artenentdeckung]: Nennen Sie für vor-linnéische Arten (< 1735) ausschließlich früheste Textzeugen/Chronisten (keine erfundenen Ämter oder Entdecker), wissenschaftliche sowie klassische Originalsprachennamen (`classicalSourceName`: Altgriechisch, Latein, klassisches Chinesisch, Nahuatl usw.) und kanonische Werk-/Ereignisjahre.',
       );
     }
     if (hasSpace) {
@@ -517,7 +502,7 @@ export function buildActiveLayerFocusDirective(
   }
   if (hasSpecies) {
     directives.push(
-      '- 【物种发现维度】：对于林奈双名法（1735 年）之前的古代物种，必须严格引用“最早传世文献记述者 / 历史事件见证者”及“原典成书年或标志性事件年”（严禁编造古代发现人或虚假官署），并结合古典原典语言名称（`classicalGreekName`：希腊填古希腊文、中国填先秦/汉唐古称与转写、中美洲填纳瓦特尔语等）与现代学名展开说明。',
+      '- 【物种发现维度】：对于林奈双名法（1735 年）之前的古代物种，必须严格引用“最早传世文献记述者 / 历史事件见证者”及“原典成书年或标志性事件年”（严禁编造古代发现人或虚假官署），并结合古典原典语言名称（`classicalSourceName`：希腊填古希腊文、罗马填拉丁/希腊原名、中国填先秦/汉唐古称与转写、中美洲填纳瓦特尔语等）与现代学名展开说明。',
     );
   }
   if (hasSpace) {
@@ -623,17 +608,32 @@ export function extractRegionOverview(params: {
     ? `${formatYearByLang(wStart, language, true)} – ${formatYearByLang(wEnd, language, true)}`
     : formatYearByLang(yr, language, false);
 
-  const inEra = intervalsOverlap(ATHENS_DATA_START_YEAR, ATHENS_DATA_END_YEAR, wStart, wEnd);
+  const importedPolityIds = new Set((importedBundle?.polities ?? []).map((p) => p.id));
+  const rawCandidatePolities: ImportedPolityRecord[] = getPolityPhases(importedBundle);
+  const candidatePolities: ImportedPolityRecord[] =
+    importedPolityIds.size > 0
+      ? [
+          ...rawCandidatePolities.filter((p) => importedPolityIds.has(p.id)),
+          ...rawCandidatePolities.filter((p) => !importedPolityIds.has(p.id)),
+        ]
+      : rawCandidatePolities;
 
-  const candidatePolities: ImportedPolityRecord[] = mergeRecordsById<ImportedPolityRecord>(
-    inEra ? ATHENS_POLITY_PHASES : [],
-    importedBundle?.polities || [],
+  // When a spatial region is selected and multiple polities overlap in time, prefer the polity spatially matching the selection
+  const activeTimePolities = candidatePolities.filter(
+    (p) =>
+      (yr >= p.startYear && yr <= p.endYear) ||
+      intervalsOverlap(p.startYear, p.endYear, wStart, wEnd),
   );
 
   const activePolity: ImportedPolityRecord | null =
+    (selectedRegion
+      ? activeTimePolities.find((p) =>
+          isPointInRegionSelection(p.capitalCoords[0], p.capitalCoords[1], selectedRegion, 4.0),
+        )
+      : undefined) ||
     candidatePolities.find((p) => yr >= p.startYear && yr <= p.endYear) ||
     getActivePolityPhase(yr) ||
-    candidatePolities.find((p) => intervalsOverlap(p.startYear, p.endYear, wStart, wEnd)) ||
+    activeTimePolities[0] ||
     null;
 
   const resolvePolityText = (pol: ImportedPolityRecord) => {
@@ -701,10 +701,7 @@ export function extractRegionOverview(params: {
   }
 
   // 2. Matched territories in timeWindow & spatial selection
-  const allTerritories: ImportedTerritoryRecord[] = mergeRecordsById<ImportedTerritoryRecord>(
-    inEra ? ATHENS_TERRITORY_REGIONS : [],
-    importedBundle?.territories || [],
-  );
+  const allTerritories: ImportedTerritoryRecord[] = getTerritoryRegions(importedBundle);
 
   const matchedTerritories = allTerritories.filter((reg) => {
     if (!intervalsOverlap(reg.validFrom, reg.validTo, wStart, wEnd)) return false;
@@ -712,7 +709,7 @@ export function extractRegionOverview(params: {
     if (selectedRegion.kind === 'territory') {
       return reg.id === selectedRegion.territoryId;
     }
-    const approxBox = reg.approxBBox || TERRITORY_APPROX_BBOX[reg.id];
+    const approxBox = reg.approxBBox;
     if (!approxBox) return false;
     if (selectedRegion.kind === 'circle') {
       const cx = (approxBox.minLon + approxBox.maxLon) * 0.5;
@@ -726,11 +723,7 @@ export function extractRegionOverview(params: {
   });
 
   // 3. Matched population density nodes & node-level details
-  const allPopNodes: ImportedPopulationNodeRecord[] =
-    mergeRecordsById<ImportedPopulationNodeRecord>(
-      inEra ? ATHENS_POPULATION_REGIONS : [],
-      importedBundle?.populationNodes || [],
-    );
+  const allPopNodes: ImportedPopulationNodeRecord[] = getPopulationNodes(importedBundle);
 
   const matchedPopNodes = allPopNodes.filter((node) => {
     if (!intervalsOverlap(node.validFrom, node.validTo, wStart, wEnd)) return false;
@@ -772,11 +765,7 @@ export function extractRegionOverview(params: {
       : null;
 
   // 4. Matched night-light nodes & node-level details
-  const allNightNodes: ImportedNightLightNodeRecord[] =
-    mergeRecordsById<ImportedNightLightNodeRecord>(
-      inEra ? ATHENS_NIGHT_LIGHTS : [],
-      importedBundle?.nightLightNodes || [],
-    );
+  const allNightNodes: ImportedNightLightNodeRecord[] = getNightLightNodes(importedBundle);
 
   const matchedNightNodes = allNightNodes.filter((n) => {
     if (!intervalsOverlap(n.validFrom, n.validTo, wStart, wEnd)) return false;
@@ -812,11 +801,7 @@ export function extractRegionOverview(params: {
       : null;
 
   // 5. Matched transport routes
-  const allRoutes: ImportedTransportRouteRecord[] =
-    mergeRecordsById<ImportedTransportRouteRecord>(
-      inEra ? ATHENS_TRANSPORT_ROUTES : [],
-      importedBundle?.transportRoutes || [],
-    );
+  const allRoutes: ImportedTransportRouteRecord[] = getTransportRoutes(importedBundle);
 
   const matchedRoutes = allRoutes.filter((r) => {
     if (!intervalsOverlap(r.openedYear, r.closedYear, wStart, wEnd)) return false;
@@ -831,10 +816,7 @@ export function extractRegionOverview(params: {
 
   // 6. Matched mortality catastrophes & species discoveries
   const allCatastrophes: ImportedMortalityCatastropheRecord[] =
-    mergeRecordsById<ImportedMortalityCatastropheRecord>(
-      inEra ? ATHENS_MORTALITY_CATASTROPHES : [],
-      importedBundle?.mortalityCatastrophes || [],
-    );
+    getMortalityCatastrophes(importedBundle);
 
   const matchedCatastrophes = allCatastrophes.filter((ev) => {
     const timeMatch = selectedRange
@@ -850,11 +832,7 @@ export function extractRegionOverview(params: {
     );
   });
 
-  const allSpecies: ImportedSpeciesDiscoveryRecord[] =
-    mergeRecordsById<ImportedSpeciesDiscoveryRecord>(
-      inEra ? ATHENS_SPECIES_DISCOVERIES : [],
-      importedBundle?.speciesDiscoveries || [],
-    );
+  const allSpecies: ImportedSpeciesDiscoveryRecord[] = getSpeciesDiscoveries(importedBundle);
 
   const matchedSpecies = allSpecies.filter((sp) => {
     const timeMatch = selectedRange
@@ -1012,7 +990,7 @@ export function extractRegionOverview(params: {
     for (const sp of matchedSpecies) {
       const locSp = localizeSpecies(sp, language);
       const commonName = pickI18n(sp.commonNameI18n, language, locSp.commonName);
-      const classicalSuffix = sp.classicalGreekName ? ` · ${sp.classicalGreekName}` : '';
+      const classicalSuffix = sp.classicalSourceName ? ` · ${sp.classicalSourceName}` : '';
       events.push({
         id: sp.id,
         year: sp.discoveryYear,
@@ -1070,12 +1048,10 @@ export function extractRegionOverview(params: {
     }
   }
 
-  // 7F-2. Imported Space Missions (when space_race is active or baseline view)
-  if (
-    importedBundle?.spaceMissions?.length &&
-    (showAllBaselineEvents || activeLayers.includes('space_race'))
-  ) {
-    for (const sm of importedBundle.spaceMissions) {
+  // 7F-2. Space Missions (when space_race is active or baseline view)
+  const allSpaceMissions = getSpaceMissions(importedBundle);
+  if (allSpaceMissions.length > 0 && (showAllBaselineEvents || activeLayers.includes('space_race'))) {
+    for (const sm of allSpaceMissions) {
       if (!intervalsOverlap(sm.launchYear, sm.arrivalYear, wStart, wEnd)) continue;
       events.push({
         id: sm.id,
@@ -1252,11 +1228,15 @@ export function formatContextForPrompt(
       );
     }
     lines.push(`- Active Time Point / Interval: ${overview.timeLabelZh}`);
+    const dataBounds = computeDatasetYearBounds();
+    const boundsLabelEn = dataBounds
+      ? `${formatYearByLang(dataBounds.minYear, 'en', true)} – ${formatYearByLang(dataBounds.maxYear, 'en', true)}`
+      : 'no loaded dataset';
     lines.push(
       `- Historical Polity Phase: ${
         overview.activePolityNameZh
           ? `${overview.activePolityNameZh} (${overview.activeEraSubtitle || ''})`
-          : 'Outside loaded Classical Athens polity window (500 BCE – 404 BCE)'
+          : `Outside active polity intervals (loaded dataset span: ${boundsLabelEn})`
       }`,
     );
     lines.push(`- Displayed Layer Stack: ${overview.activeLayerLabelsZh.join(' + ')}`);
@@ -1366,11 +1346,15 @@ export function formatContextForPrompt(
       );
     }
     lines.push(`- Aktueller Zeitpunkt / Zeitraum: ${overview.timeLabelZh}`);
+    const dataBoundsDe = computeDatasetYearBounds();
+    const boundsLabelDe = dataBoundsDe
+      ? `${formatYearByLang(dataBoundsDe.minYear, 'de', true)} – ${formatYearByLang(dataBoundsDe.maxYear, 'de', true)}`
+      : 'keine Daten';
     lines.push(
       `- Historische Herrschaftsphase: ${
         overview.activePolityNameZh
           ? `${overview.activePolityNameZh} (${overview.activeEraSubtitle || ''})`
-          : 'Außerhalb des geladenen klassischen Datenfensters (500–404 v. Chr.)'
+          : `Außerhalb aktiver Herrschaftsphasen (Datenfenster: ${boundsLabelDe})`
       }`,
     );
     lines.push(`- Aktive Ebenenkombination: ${overview.activeLayerLabelsZh.join(' + ')}`);
@@ -1482,11 +1466,15 @@ export function formatContextForPrompt(
   }
 
   lines.push(`- 当前时间轴位置/区间：${overview.timeLabelZh}`);
+  const dataBoundsZh = computeDatasetYearBounds();
+  const boundsLabelZh = dataBoundsZh
+    ? `${formatYearByLang(dataBoundsZh.minYear, 'zh', true)} – ${formatYearByLang(dataBoundsZh.maxYear, 'zh', true)}`
+    : '暂无数据集';
   lines.push(
     `- 当前所属历史政权阶段：${
       overview.activePolityNameZh
         ? `${overview.activePolityNameZh}（${overview.activeEraSubtitle || ''}）`
-        : '当前年份处于已载入政权数据范围（500 BCE – 404 BCE）之外'
+        : `当前年份未匹配激活政权区间（已载入数据集跨度：${boundsLabelZh}）`
     }`,
   );
   lines.push(`- 当前显示图层组合：${overview.activeLayerLabelsZh.join(' + ')}`);

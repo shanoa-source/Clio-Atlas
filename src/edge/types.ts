@@ -5,6 +5,7 @@ import {
   ImportMode,
   ImportTarget,
 } from '../shared/dataValidator';
+import { AtlasImportBundle } from '../types/history';
 
 /**
  * Minimal Cloudflare Workers KVNamespace interface compatible with Cloudflare Pages Functions bindings.
@@ -69,6 +70,10 @@ export type PagesFunction<
 export interface AtlasStorageAdapter {
   readonly persistenceKind: 'node-disk' | 'cloudflare-kv' | 'edge-memory';
   getSnapshot(): Promise<AtlasRawStoreSnapshot>;
+  getDetectedDatasets?(): Promise<{
+    datasetIds: string[];
+    mergedBundle: AtlasImportBundle;
+  }>;
   commitImport(params: {
     payload: unknown;
     target: ImportTarget;

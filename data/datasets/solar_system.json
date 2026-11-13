@@ -1,0 +1,112 @@
+{
+  "schemaVersion": "1.0",
+  "bodies": [
+    {
+      "id": "sun",
+      "nameZh": "太阳",
+      "nameEn": "Sun",
+      "kind": "star",
+      "orbitRadiusUnits": 0,
+      "orbitalPeriodYears": 1,
+      "displayRadius": 3.4,
+      "baseColor": "#F59E0B",
+      "secondaryColor": "#FEF3C7",
+      "initialPhaseRad": 0,
+      "descriptionZh": "太阳系中心恒星，黄道面坐标系原点。"
+    },
+    {
+      "id": "mercury",
+      "nameZh": "水星",
+      "nameEn": "Mercury",
+      "kind": "planet",
+      "orbitRadiusUnits": 9.5,
+      "orbitalPeriodYears": 0.2408,
+      "displayRadius": 0.72,
+      "baseColor": "#94A3B8",
+      "secondaryColor": "#64748B",
+      "initialPhaseRad": 0.8,
+      "descriptionZh": "距日最近岩石行星，表面遍布撞击盆地与陡坎。"
+    },
+    {
+      "id": "venus",
+      "nameZh": "金星",
+      "nameEn": "Venus",
+      "kind": "planet",
+      "orbitRadiusUnits": 15,
+      "orbitalPeriodYears": 0.6152,
+      "displayRadius": 1.15,
+      "baseColor": "#EAB308",
+      "secondaryColor": "#FEF08A",
+      "initialPhaseRad": 2.1,
+      "descriptionZh": "浓密硫酸云层覆盖的类地行星。"
+    },
+    {
+      "id": "earth",
+      "nameZh": "地球",
+      "nameEn": "Earth",
+      "kind": "planet",
+      "orbitRadiusUnits": 22.5,
+      "orbitalPeriodYears": 1,
+      "displayRadius": 1.32,
+      "baseColor": "#2563EB",
+      "secondaryColor": "#10B981",
+      "initialPhaseRad": 3.8,
+      "descriptionZh": "人类文明母星，放大检视地球可返回三维地球视图。"
+    },
+    {
+      "id": "moon",
+      "nameZh": "月球",
+      "nameEn": "Moon",
+      "kind": "moon",
+      "parentBodyId": "earth",
+      "orbitRadiusUnits": 3.2,
+      "orbitalPeriodYears": 0.0748,
+      "displayRadius": 0.54,
+      "baseColor": "#CBD5E1",
+      "secondaryColor": "#64748B",
+      "initialPhaseRad": 1.2,
+      "descriptionZh": "地球天然卫星，支持放大检视环月轨道器与月表着陆基地。"
+    },
+    {
+      "id": "mars",
+      "nameZh": "火星",
+      "nameEn": "Mars",
+      "kind": "planet",
+      "orbitRadiusUnits": 31.5,
+      "orbitalPeriodYears": 1.8808,
+      "displayRadius": 0.96,
+      "baseColor": "#DC2626",
+      "secondaryColor": "#9A3412",
+      "initialPhaseRad": 5.1,
+      "descriptionZh": "氧化铁风化层红色行星，深空巡视器与轨道中继核心目标天体。"
+    },
+    {
+      "id": "jupiter",
+      "nameZh": "木星",
+      "nameEn": "Jupiter",
+      "kind": "planet",
+      "orbitRadiusUnits": 44,
+      "orbitalPeriodYears": 11.862,
+      "displayRadius": 2.35,
+      "baseColor": "#D97706",
+      "secondaryColor": "#FDE68A",
+      "initialPhaseRad": 1.6,
+      "descriptionZh": "太阳系最大气态巨行星，具显著纬向云带与强磁层。"
+    },
+    {
+      "id": "saturn",
+      "nameZh": "土星",
+      "nameEn": "Saturn",
+      "kind": "planet",
+      "orbitRadiusUnits": 57.5,
+      "orbitalPeriodYears": 29.457,
+      "displayRadius": 2,
+      "baseColor": "#CA8A04",
+      "secondaryColor": "#FEF9C3",
+      "hasRings": true,
+      "initialPhaseRad": 4.4,
+      "descriptionZh": "拥有壮观冰质行星环系统的气态巨行星。"
+    }
+  ],
+  "spaceMissions": []
+}

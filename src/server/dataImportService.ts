@@ -231,3 +231,96 @@ export function getDataSchemaCatalog(
     counts: computeBundleCounts(merged),
   };
 }
+
+/**
+ * Automatically detects and merges all historical dataset JSON bundles under `data/datasets/*.json`
+ * on the backend filesystem (excluding solar_system.json celestial definitions), so dropping a new
+ * dataset file into `data/datasets/` makes it immediately available to the unified frontend.
+ */
+export function discoverBackendDatasetsFromDisk(baseDir: string): {
+  datasetIds: string[];
+  mergedBundle: AtlasImportBundle;
+} {
+  const datasetsDir = path.join(baseDir, 'data', 'datasets');
+  const merged = createEmptyAtlasBundle();
+  const datasetIds: string[] = [];
+
+  if (!fs.existsSync(datasetsDir)) {
+    return { datasetIds, mergedBundle: merged };
+  }
+
+  const entries = fs
+    .readdirSync(datasetsDir, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.json'))
+    .map((e) => e.name)
+    .sort((a, b) => a.localeCompare(b));
+
+  for (const fileName of entries) {
+    const fullPath = path.join(datasetsDir, fileName);
+    const rawText = safeReadTextFile(fullPath);
+    if (!rawText) continue;
+    try {
+      const parsed = JSON.parse(rawText);
+      if (!isPlainObject(parsed)) continue;
+      // Skip non-polity celestial definition files such as solar_system.json
+      if (Array.isArray(parsed.bodies) && !Array.isArray(parsed.polities)) {
+        continue;
+      }
+      const meta = isPlainObject(parsed.datasetMeta) ? parsed.datasetMeta : null;
+      const datasetId =
+        typeof meta?.id === 'string' && meta.id.trim()
+          ? meta.id.trim()
+          : fileName.replace(/\.json$/i, '');
+
+      const candidatePayload = { ...parsed };
+      delete candidatePayload.datasetMeta;
+
+      const validated = validateImportPayload(candidatePayload, 'bundle');
+      if (!validated.valid) continue;
+      const norm = validated.normalized;
+      datasetIds.push(datasetId);
+
+      merged.polities = mergeByKey(merged.polities, norm.polities, (item) => item.id);
+      merged.territories = mergeByKey(merged.territories, norm.territories, (item) => item.id);
+      merged.populationNodes = mergeByKey(
+        merged.populationNodes,
+        norm.populationNodes,
+        (item) => item.id,
+      );
+      merged.nightLightNodes = mergeByKey(
+        merged.nightLightNodes,
+        norm.nightLightNodes,
+        (item) => item.id,
+      );
+      merged.transportRoutes = mergeByKey(
+        merged.transportRoutes,
+        norm.transportRoutes,
+        (item) => item.id,
+      );
+      merged.speciesDiscoveries = mergeByKey(
+        merged.speciesDiscoveries,
+        norm.speciesDiscoveries,
+        (item) => item.id,
+      );
+      merged.mortalityCatastrophes = mergeByKey(
+        merged.mortalityCatastrophes,
+        norm.mortalityCatastrophes,
+        (item) => item.id,
+      );
+      merged.spaceMissions = mergeByKey(
+        merged.spaceMissions,
+        norm.spaceMissions,
+        (item) => item.id,
+      );
+      merged.books = [...merged.books, ...norm.books];
+      merged.customEvents = [...merged.customEvents, ...norm.customEvents];
+    } catch {
+      // Ignore malformed dataset files without crashing server startup
+    }
+  }
+
+  return {
+    datasetIds,
+    mergedBundle: merged,
+  };
+}

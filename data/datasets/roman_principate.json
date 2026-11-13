@@ -1,0 +1,996 @@
+{
+  "schemaVersion": "1.0.0",
+  "datasetMeta": {
+    "id": "roman_principate",
+    "nameZh": "罗马帝国元首制盛期",
+    "nameEn": "Roman Principate (Pax Romana)",
+    "nameDe": "Römischer Prinzipat (Pax Romana)",
+    "defaultYear": 117,
+    "cameraCenter": [13.2, 41.2],
+    "cameraZoom": 3.55
+  },
+  "polities": [
+    {
+      "id": "roman_augustus_julio_claudian",
+      "nameZh": "罗马元首制早期 · 屋大维至朱里亚-克劳狄王朝",
+      "nameEn": "Early Roman Principate · Augustus & Julio-Claudians",
+      "nameDe": "Früher Prinzipat · Augustus & Julisch-Claudische Dynastie",
+      "eraSubtitle": "元首体制奠基与地中海内海化（27 BCE – 68 CE）",
+      "eraSubtitleI18n": {
+        "zh": "元首体制奠基与地中海内海化（27 BCE – 68 CE）",
+        "en": "Foundation of the Principate & Mare Nostrum Integration (27 BCE – 68 CE)",
+        "de": "Begründung des Prinzipats & Mare-Nostrum-Integration (27 v. Chr. – 68 n. Chr.)"
+      },
+      "startYear": -27,
+      "endYear": 68,
+      "representativeColor": "#991B1B",
+      "borderColor": "#F59E0B",
+      "capitalName": "罗马（帕拉蒂尼山与古罗马广场）",
+      "capitalNameI18n": {
+        "zh": "罗马（帕拉蒂尼山与古罗马广场）",
+        "en": "Rome (Palatine Hill & Forum Romanum)",
+        "de": "Rom (Palatin & Forum Romanum)"
+      },
+      "capitalCoords": [12.4853, 41.8925],
+      "flagLabel": "奥古斯都月桂与 SPQR 元首军旗",
+      "flagSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 64\"><defs><linearGradient id=\"rom1\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0%\" stop-color=\"#7f1d1d\"/><stop offset=\"100%\" stop-color=\"#450a0a\"/></linearGradient></defs><rect width=\"96\" height=\"64\" rx=\"4\" fill=\"url(#rom1)\"/><rect x=\"3\" y=\"3\" width=\"90\" height=\"58\" rx=\"2\" fill=\"none\" stroke=\"#f59e0b\" stroke-width=\"1.6\"/><circle cx=\"48\" cy=\"24\" r=\"12\" fill=\"none\" stroke=\"#fbbf24\" stroke-width=\"2\" stroke-dasharray=\"4 2\"/><path d=\"M48 13 L51 22 L60 22 L52.5 27 L55 35 L48 30 L41 35 L43.5 27 L36 22 L45 22 Z\" fill=\"#fbbf24\"/><text x=\"48\" y=\"52\" text-anchor=\"middle\" fill=\"#fde68a\" font-family=\"serif\" font-weight=\"700\" font-size=\"13\" letter-spacing=\"2\">SPQR</text></svg>",
+      "historicalSummary": "公元前 27 年屋大维获元老院授予“奥古斯都”尊号，确立元首制宪制框架；吞并托勒密埃及并将其收为元首直辖粮仓，整编常备军团与普特奥利—奥斯蒂亚海运谷物供给体系。",
+      "summaryI18n": {
+        "zh": "公元前 27 年屋大维获元老院授予“奥古斯都”尊号，确立元首制宪制框架；吞并托勒密埃及并将其收为元首直辖粮仓，整编常备军团与普特奥利—奥斯蒂亚海运谷物供给体系。",
+        "en": "In 27 BCE Octavian received the title Augustus, establishing the Principate constitutional settlement, annexing Egypt as the imperial grain storehouse, and organizing the Mediterranean annona fleet.",
+        "de": "27 v. Chr. erhielt Oktavian den Ehrennamen Augustus, begründete den Prinzipat, gliederte Ägypten als kaiserliche Kornkammer ein und sicherte die mediterrane Annona-Getreideflotte."
+      },
+      "sourceCitation": "《奥古斯都功德碑》(Res Gestae Divi Augusti)；塔西佗《编年史》(Tacitus, Annales)"
+    },
+    {
+      "id": "roman_flavian_trajanic_peak",
+      "nameZh": "罗马帝国极盛期 · 弗拉维至图拉真与哈德良时代",
+      "nameEn": "High Roman Empire · Flavian, Trajanic & Hadrianic Peak",
+      "nameDe": "Hohe Römische Kaiserzeit · Flavier, Trajan & Hadrian",
+      "eraSubtitle": "奥斯蒂亚六角港扩建与帝国疆域极盛（69 CE – 138 CE）",
+      "eraSubtitleI18n": {
+        "zh": "奥斯蒂亚六角港扩建与帝国疆域极盛（69 CE – 138 CE）",
+        "en": "Portus Traiani Hexagonal Basin & Territorial Zenith (69 CE – 138 CE)",
+        "de": "Trajans Sechseckhafen Portus & territoriale Maximalausdehnung (69 – 138 n. Chr.)"
+      },
+      "startYear": 69,
+      "endYear": 138,
+      "representativeColor": "#B91C1C",
+      "borderColor": "#FBBF24",
+      "capitalName": "罗马（图拉真广场与帕拉蒂尼宫苑）",
+      "capitalNameI18n": {
+        "zh": "罗马（图拉真广场与帕拉蒂尼宫苑）",
+        "en": "Rome (Forum of Trajan & Imperial Palatine)",
+        "de": "Rom (Trajansforum & Kaiserpaläste auf dem Palatin)"
+      },
+      "capitalCoords": [12.4858, 41.8956],
+      "flagLabel": "图拉真鹰徽与金紫元首军旗 (Aquila & Vexillum)",
+      "flagSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 64\"><defs><linearGradient id=\"rom2\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop offset=\"0%\" stop-color=\"#991b1b\"/><stop offset=\"100%\" stop-color=\"#581c87\"/></linearGradient></defs><rect width=\"96\" height=\"64\" rx=\"4\" fill=\"url(#rom2)\"/><rect x=\"3\" y=\"3\" width=\"90\" height=\"58\" rx=\"2\" fill=\"none\" stroke=\"#fbbf24\" stroke-width=\"1.8\"/><path d=\"M24 26 C32 14, 42 18, 48 12 C54 18, 64 14, 72 26 L60 28 L48 21 L36 28 Z\" fill=\"#fbbf24\"/><circle cx=\"48\" cy=\"29\" r=\"4.5\" fill=\"#fde68a\"/><line x1=\"24\" y1=\"37\" x2=\"72\" y2=\"37\" stroke=\"#fbbf24\" stroke-width=\"1.4\"/><text x=\"48\" y=\"53\" text-anchor=\"middle\" fill=\"#fef08a\" font-family=\"serif\" font-weight=\"700\" font-size=\"13.5\" letter-spacing=\"2.5\">SPQR</text></svg>",
+      "historicalSummary": "韦斯帕芗重建帝国财政后，图拉真于奥斯蒂亚开凿内陆六角形深水港（Portus），保障百万人口都城的全天候谷物与贝蒂卡橄榄油卸载；117 年帝国版图与环地中海航运网络达到历史顶峰。",
+      "summaryI18n": {
+        "zh": "韦斯帕芗重建帝国财政后，图拉真于奥斯蒂亚开凿内陆六角形深水港（Portus），保障百万人口都城的全天候谷物与贝蒂卡橄榄油卸载；117 年帝国版图与环地中海航运网络达到历史顶峰。",
+        "en": "Following Flavian fiscal consolidation, Trajan excavated the hexagonal inner basin at Portus to secure year-round grain and Baetican olive-oil imports for Rome's million inhabitants, reaching territorial zenith in 117 CE.",
+        "de": "Nach der flavischen Finanzkonsolidierung ließ Trajan das sechseckige Hafenbecken von Portus anlegen, um Roms Millionenbevölkerung ganzjährig mit Getreide und baetischem Olivenöl zu versorgen; 117 n. Chr. erreichte das Reich seinen Zenit."
+      },
+      "sourceCitation": "卡西乌斯·狄奥《罗马史》(Cassius Dio, LXVIII)；小普林尼《书信集》(Pliny the Younger, Epistulae)"
+    },
+    {
+      "id": "roman_antonine_pax",
+      "nameZh": "安敦尼王朝 · 罗马和平晚景与大瘟疫冲击",
+      "nameEn": "Antonine Dynasty · Late Pax Romana & Antonine Plague",
+      "nameDe": "Antoninische Dynastie · Späte Pax Romana & Antoninische Pest",
+      "eraSubtitle": "环地中海城市繁荣顶峰与远征疫病冲击（139 CE – 180 CE）",
+      "eraSubtitleI18n": {
+        "zh": "环地中海城市繁荣顶峰与远征疫病冲击（139 CE – 180 CE）",
+        "en": "Civic Prosperity Peak & Pandemic Shock under Marcus Aurelius (139 CE – 180 CE)",
+        "de": "Städtische Blütezeit & Seuchenschock unter Mark Aurel (139 – 180 n. Chr.)"
+      },
+      "startYear": 139,
+      "endYear": 180,
+      "representativeColor": "#7F1D1D",
+      "borderColor": "#D97706",
+      "capitalName": "罗马（安敦尼广场与台伯河左岸港区）",
+      "capitalNameI18n": {
+        "zh": "罗马（安敦尼广场与台伯河左岸港区）",
+        "en": "Rome (Campus Martius & Emporium River Port)",
+        "de": "Rom (Campus Martius & Emporium-Flusshafen)"
+      },
+      "capitalCoords": [12.4812, 41.8919],
+      "flagLabel": "安敦尼双帝联治紫金军旗",
+      "flagSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 96 64\"><rect width=\"96\" height=\"64\" rx=\"4\" fill=\"#6b141a\"/><rect x=\"4\" y=\"4\" width=\"88\" height=\"56\" rx=\"2\" fill=\"none\" stroke=\"#f59e0b\" stroke-width=\"1.5\"/><circle cx=\"36\" cy=\"24\" r=\"9\" fill=\"none\" stroke=\"#fbbf24\" stroke-width=\"1.8\"/><circle cx=\"60\" cy=\"24\" r=\"9\" fill=\"none\" stroke=\"#fbbf24\" stroke-width=\"1.8\"/><path d=\"M48 12 L50.5 34 L45.5 34 Z\" fill=\"#fde68a\"/><text x=\"48\" y=\"52\" text-anchor=\"middle\" fill=\"#fde68a\" font-family=\"serif\" font-weight=\"700\" font-size=\"13\" letter-spacing=\"2\">ROMA</text></svg>",
+      "historicalSummary": "安敦尼·毕尤时期地中海商贸与城市市政建设臻于极盛；165 年随帕提亚远征军返航爆发安敦尼大瘟疫，沿亚历山大港—奥斯蒂亚航运干线蔓延至意大利本土与莱茵—多瑙防线。",
+      "summaryI18n": {
+        "zh": "安敦尼·毕尤时期地中海商贸与城市市政建设臻于极盛；165 年随帕提亚远征军返航爆发安敦尼大瘟疫，沿亚历山大港—奥斯蒂亚航运干线蔓延至意大利本土与莱茵—多瑙防线。",
+        "en": "Mediterranean civic urbanism peaked under Antoninus Pius before the Antonine Plague erupted in 165 CE with troops returning from Mesopotamia, spreading along imperial sea lanes into Italy and frontier legions.",
+        "de": "Unter Antoninus Pius erreichte die mediterrane Städtekultur ihren Höhepunkt, ehe 165 n. Chr. die Antoninische Pest über die Reichsseerouten nach Italien und an die Grenzlegionen vordrang."
+      },
+      "sourceCitation": "盖伦《医术方法》(Galen, Methodus Medendi)；《奥古斯都史》(Historia Augusta)"
+    }
+  ],
+  "territories": [
+    {
+      "id": "italia_latium_et_etruria_core",
+      "nameZh": "意大利本土核心（拉丁姆、罗马都城与伊特鲁里亚）",
+      "nameI18n": {
+        "zh": "意大利本土核心（拉丁姆、罗马都城与伊特鲁里亚）",
+        "en": "Italia Core (Latium, Rome & Etruria)",
+        "de": "Kernland Italia (Latium, Rom & Etrurien)"
+      },
+      "validFrom": -27,
+      "validTo": 180,
+      "tier": "metropolis",
+      "osmIds": ["R40784", "R41977"],
+      "approxBBox": { "minLon": 9.69, "minLat": 40.78, "maxLon": 14.03, "maxLat": 44.47 }
+    },
+    {
+      "id": "italia_campania_apulia_ports",
+      "nameZh": "南意大利港湾带（坎帕尼亚、普特奥利与布林迪西）",
+      "nameI18n": {
+        "zh": "南意大利港湾带（坎帕尼亚、普特奥利与布林迪西）",
+        "en": "Southern Italia Port Belt (Campania, Puteoli & Brundisium)",
+        "de": "Süditalischer Hafengürtel (Kampanien, Puteoli & Brundisium)"
+      },
+      "validFrom": -27,
+      "validTo": 180,
+      "tier": "cleruchy",
+      "osmIds": ["R40218", "R40095", "R40137"],
+      "approxBBox": { "minLon": 13.76, "minLat": 39.79, "maxLon": 18.52, "maxLat": 42.09 }
+    },
+    {
+      "id": "provincia_sicilia_et_sardinia",
+      "nameZh": "西西里与撒丁行省（第勒尼安海近海谷物行省）",
+      "nameI18n": {
+        "zh": "西西里与撒丁行省（第勒尼安海近海谷物行省）",
+        "en": "Sicilia & Sardinia (Tyrrhenian Grain Provinces)",
+        "de": "Sicilia & Sardinia (Tyrrhenische Kornprovinzen)"
+      },
+      "validFrom": -27,
+      "validTo": 180,
+      "tier": "allied_tribute",
+      "osmIds": ["R39152", "R7361997"],
+      "approxBBox": { "minLon": 8.13, "minLat": 35.49, "maxLon": 15.65, "maxLat": 41.31 }
+    },
+    {
+      "id": "gallia_narbonensis_province",
+      "nameZh": "纳博讷高卢行省（马西利亚与罗讷河口商贸走廊）",
+      "nameI18n": {
+        "zh": "纳博讷高卢行省（马西利亚与罗讷河口商贸走廊）",
+        "en": "Gallia Narbonensis (Massilia & Rhône Corridor)",
+        "de": "Gallia Narbonensis (Massilia & Rhônekorridor)"
+      },
+      "validFrom": -27,
+      "validTo": 180,
+      "tier": "allied_tribute",
+      "osmIds": ["R8654"],
+      "approxBBox": { "minLon": 4.23, "minLat": 42.98, "maxLon": 7.72, "maxLat": 45.13 }
+    },
+    {
+      "id": "hispania_baetica_et_tarraconensis",
+      "nameZh": "贝蒂卡与塔拉戈纳西班牙行省（橄榄油与银铜矿产基地）",
+      "nameI18n": {
+        "zh": "贝蒂卡与塔拉戈纳西班牙行省（橄榄油与银铜矿产基地）",
+        "en": "Hispania Baetica & Tarraconensis (Olive Oil & Bullion Provinces)",
+        "de": "Hispania Baetica & Tarraconensis (Olivenöl- & Edelmetallprovinzen)"
+      },
+      "validFrom": -27,
+      "validTo": 180,
+      "tier": "allied_tribute",
+      "osmIds": ["R349044", "R349053"],
+      "approxBBox": { "minLon": -7.52, "minLat": 35.94, "maxLon": 3.32, "maxLat": 42.86 }
+    },
+    {
+      "id": "africa_proconsularis_carthago",
+      "nameZh": "阿非利加资深执政官行省（迦太基重建殖民城与北非粮仓）",
+      "nameI18n": {
+        "zh": "阿非利加资深执政官行省（迦太基重建殖民城与北非粮仓）",
+        "en": "Africa Proconsularis (Colonia Carthago & North African Granary)",
+        "de": "Africa Proconsularis (Colonia Carthago & Nordafrikanische Kornkammer)"
+      },
+      "validFrom": -27,
+      "validTo": 180,
+      "tier": "cleruchy",
+      "osmIds": ["R1435835"],
+      "approxBBox": { "minLon": 10.00, "minLat": 36.68, "maxLon": 10.37, "maxLat": 36.96 }
+    },
+    {
+      "id": "creta_et_aegean_transit",
+      "nameZh": "克里特行省（亚历山大运粮船队东地中海中转屏障）",
+      "nameI18n": {
+        "zh": "克里特行省（亚历山大运粮船队东地中海中转屏障）",
+        "en": "Creta (Eastern Mediterranean Grain-Fleet Transit Shield)",
+        "de": "Creta (Ostmediterraner Schutzriegel der Getreideflotte)"
+      },
+      "validFrom": -27,
+      "validTo": 180,
+      "tier": "allied_tribute",
+      "osmIds": ["R453129"],
+      "approxBBox": { "minLon": 23.47, "minLat": 34.80, "maxLon": 26.35, "maxLat": 35.70 }
+    },
+    {
+      "id": "aegyptus_alexandria_imperial_granary",
+      "nameZh": "埃及元首私产行省（亚历山大港与尼罗河三角洲核心粮港）",
+      "nameI18n": {
+        "zh": "埃及元首私产行省（亚历山大港与尼罗河三角洲核心粮港）",
+        "en": "Aegyptus Imperial Domain (Alexandria & Delta Grain Terminus)",
+        "de": "Kaiserprovinz Aegyptus (Alexandria & Nildelta-Getreideterminal)"
+      },
+      "validFrom": -27,
+      "validTo": 180,
+      "tier": "cleruchy",
+      "osmIds": ["R3061846"],
+      "approxBBox": { "minLon": 29.40, "minLat": 30.80, "maxLon": 30.15, "maxLat": 31.35 }
+    }
+  ],
+  "populationNodes": [
+    {
+      "id": "pop_rome_ostia_metropolis",
+      "nameZh": "罗马都城—奥斯蒂亚港大都会圈",
+      "nameI18n": {
+        "zh": "罗马都城—奥斯蒂亚港大都会圈",
+        "en": "Rome–Ostia Imperial Metropolis",
+        "de": "Kaiserliche Metropolregion Rom–Ostia"
+      },
+      "center": [12.48, 41.89],
+      "radiusDegLon": 0.95,
+      "radiusDegLat": 0.78,
+      "validFrom": -27,
+      "validTo": 180,
+      "densityKeyframes": [
+        [-27, 420],
+        [14, 490],
+        [69, 515],
+        [117, 560],
+        [160, 555],
+        [180, 445]
+      ],
+      "estimatedTotalNote": "公元 1–2 世纪罗马城区多层公寓岛（Insulae）高度密集，常住人口突破 100 万，奥斯蒂亚与波尔图斯港区聚居逾 5 万仓储与航运劳工；166 年后受安敦尼瘟疫冲击回落。",
+      "noteI18n": {
+        "zh": "公元 1–2 世纪罗马城区多层公寓岛（Insulae）高度密集，常住人口突破 100 万，奥斯蒂亚与波尔图斯港区聚居逾 5 万仓储与航运劳工；166 年后受安敦尼瘟疫冲击回落。",
+        "en": "Rome's multi-story insulae housed ~1 million residents in the 1st–2nd centuries CE alongside ~50,000 dockworkers at Ostia/Portus before contracting during the Antonine Plague.",
+        "de": "Roms mehrstöckige Insulae beherbergten im 1.–2. Jh. n. Chr. rund 1 Million Einwohner samt ca. 50.000 Hafenarbeitern in Ostia/Portus, ehe die Antoninische Pest einen Rückgang auslöste."
+      },
+      "thermalSubZones": [
+        { "coords": [12.485, 41.892], "radiusLon": 0.25, "radiusLat": 0.22, "weightFactor": 1.0 },
+        { "coords": [12.285, 41.755], "radiusLon": 0.20, "radiusLat": 0.18, "weightFactor": 0.78 }
+      ]
+    },
+    {
+      "id": "pop_campania_bay_of_naples",
+      "nameZh": "坎帕尼亚湾城市群（普特奥利、那不勒斯与卡普阿）",
+      "nameI18n": {
+        "zh": "坎帕尼亚湾城市群（普特奥利、那不勒斯与卡普阿）",
+        "en": "Bay of Naples Conurbation (Puteoli, Neapolis & Capua)",
+        "de": "Städteband am Golf von Neapel (Puteoli, Neapolis & Capua)"
+      },
+      "center": [14.22, 40.84],
+      "radiusDegLon": 0.85,
+      "radiusDegLat": 0.68,
+      "validFrom": -27,
+      "validTo": 180,
+      "densityKeyframes": [
+        [-27, 255],
+        [60, 290],
+        [79, 235],
+        [117, 270],
+        [180, 230]
+      ],
+      "estimatedTotalNote": "意大利除罗马外人口最稠密的火山肥沃平原与东方商港群；公元 79 年维苏威火山喷发掩埋庞贝与赫库兰尼姆，造成局部人口骤降。",
+      "noteI18n": {
+        "zh": "意大利除罗马外人口最稠密的火山肥沃平原与东方商港群；公元 79 年维苏威火山喷发掩埋庞贝与赫库兰尼姆，造成局部人口骤降。",
+        "en": "Italy's densest urban and volcanic agricultural belt outside Latium; the 79 CE Vesuvius eruption buried Pompeii and Herculaneum, causing a sharp local dip.",
+        "de": "Dichtester Siedlungs- und Agrargürtel Italiens außerhalb Latiums; der Vesuvausbruch 79 n. Chr. begrub Pompeji und Herculaneum."
+      }
+    },
+    {
+      "id": "pop_alexandria_delta_metropolis",
+      "nameZh": "亚历山大港与尼罗河西支港城带",
+      "nameI18n": {
+        "zh": "亚历山大港与尼罗河西支港城带",
+        "en": "Alexandria & Western Nile Delta Port Belt",
+        "de": "Metropole Alexandria & westliches Nildelta"
+      },
+      "center": [29.90, 31.20],
+      "radiusDegLon": 0.90,
+      "radiusDegLat": 0.72,
+      "validFrom": -27,
+      "validTo": 180,
+      "densityKeyframes": [
+        [-27, 370],
+        [50, 410],
+        [117, 430],
+        [165, 425],
+        [180, 350]
+      ],
+      "estimatedTotalNote": "帝国第二大都会（约 50–60 万人口），汇集尼罗河漕运谷物、纸莎草、玻璃工坊与红海—印度洋东方香料转口贸易。",
+      "noteI18n": {
+        "zh": "帝国第二大都会（约 50–60 万人口），汇集尼罗河漕运谷物、纸莎草、玻璃工坊与红海—印度洋东方香料转口贸易。",
+        "en": "Second metropolis of the Empire (~500,000–600,000 inhabitants), concentrating Nile grain barges, papyrus/glass workshops, and Red Sea–Indian Ocean spice trade.",
+        "de": "Zweitgrößte Metropole des Reiches (ca. 500.000–600.000 Einwohner) für Nilgetreide, Papyrus-/Glasmanufakturen und den Indienhandel."
+      }
+    },
+    {
+      "id": "pop_carthago_bagradas_valley",
+      "nameZh": "迦太基殖民城与巴格拉达斯河谷",
+      "nameI18n": {
+        "zh": "迦太基殖民城与巴格拉达斯河谷",
+        "en": "Colonia Carthago & Bagradas Grain Valley",
+        "de": "Colonia Carthago & Bagradas-Korntal"
+      },
+      "center": [10.32, 36.85],
+      "radiusDegLon": 0.85,
+      "radiusDegLat": 0.70,
+      "validFrom": -27,
+      "validTo": 180,
+      "densityKeyframes": [
+        [-27, 165],
+        [50, 225],
+        [117, 295],
+        [160, 320],
+        [180, 285]
+      ],
+      "estimatedTotalNote": "奥古斯都重建迦太基殖民地后人口迅速攀升至 30 万以上，承担罗马城约三分之一至一半的海运公粮（Annona）供应。",
+      "noteI18n": {
+        "zh": "奥古斯都重建迦太基殖民地后人口迅速攀升至 30 万以上，承担罗马城约三分之一至一半的海运公粮（Annona）供应。",
+        "en": "Rebuilt under Augustus, Carthage grew past 300,000 residents and supplied over a third of Rome's state grain imports (annona).",
+        "de": "Unter Augustus neu gegründet, wuchs Karthago auf über 300.000 Einwohner und lieferte mehr als ein Drittel der staatlichen Getreideimporte Roms."
+      }
+    },
+    {
+      "id": "pop_baetica_guadalquivir_valley",
+      "nameZh": "贝蒂卡河谷城市带（希斯帕利斯、科尔杜巴与加的斯）",
+      "nameI18n": {
+        "zh": "贝蒂卡河谷城市带（希斯帕利斯、科尔杜巴与加的斯）",
+        "en": "Baetica Guadalquivir Urban Axis (Hispalis, Corduba & Gades)",
+        "de": "Baetische Städteachse am Guadalquivir (Hispalis, Corduba & Gades)"
+      },
+      "center": [-5.98, 37.39],
+      "radiusDegLon": 1.05,
+      "radiusDegLat": 0.80,
+      "validFrom": -27,
+      "validTo": 180,
+      "densityKeyframes": [
+        [-27, 150],
+        [69, 195],
+        [117, 230],
+        [160, 235],
+        [180, 205]
+      ],
+      "estimatedTotalNote": "瓜达尔基维尔河沿岸密集分布榨油庄园、双耳陶罐（Dressel 20）窑场与里奥廷托银铜矿区，罗马泰斯塔乔陶片山主体即源于此地。",
+      "noteI18n": {
+        "zh": "瓜达尔基维尔河沿岸密集分布榨油庄园、双耳陶罐（Dressel 20）窑场与里奥廷托银铜矿区，罗马泰斯塔乔陶片山主体即源于此地。",
+        "en": "Dense olive-oil estates, Dressel 20 amphora kilns, and Rio Tinto silver-copper mines along the Guadalquivir River, feeding Rome's Monte Testaccio.",
+        "de": "Dichte Olivenölgüter, Dressel-20-Amphorenöfen und Silber-Kupfer-Bergwerke von Rio Tinto entlang des Guadalquivir."
+      }
+    }
+  ],
+  "nightLightNodes": [
+    {
+      "id": "nl_rome_thermae_vigiles_core",
+      "nameZh": "罗马城区夜巡火炬、大浴场炉火与神庙长明灯",
+      "nameI18n": {
+        "zh": "罗马城区夜巡火炬、大浴场炉火与神庙长明灯",
+        "en": "Rome Nocturnal Lamps, Imperial Thermae Furnaces & Vesta Flame",
+        "de": "Roms Öllampen, Kaiserthermen-Heizöfen & Feuer der Vesta"
+      },
+      "coords": [12.485, 41.892],
+      "spreadDeg": 0.26,
+      "validFrom": -27,
+      "validTo": 180,
+      "category": "urban_lamps",
+      "intensityKeyframes": [
+        [-27, 0.86],
+        [64, 0.98],
+        [117, 0.96],
+        [160, 0.95],
+        [180, 0.78]
+      ],
+      "description": "百万居民陶制橄榄油灯、维斯塔贞女圣庙不灭圣火、7 个大队共 7,000 名夜巡消防军（Vigiles）火把以及夜间重型货车通行照明共同构成古典世界最密集的城市光场。",
+      "descriptionI18n": {
+        "zh": "百万居民陶制橄榄油灯、维斯塔贞女圣庙不灭圣火、7 个大队共 7,000 名夜巡消防军（Vigiles）火把以及夜间重型货车通行照明共同构成古典世界最密集的城市光场。",
+        "en": "Terracotta oil lamps of a million inhabitants, the eternal flame of Vesta, 7,000 Vigiles night-watchmen torches, and mandatory nighttime heavy wagon traffic formed antiquity's brightest urban glow.",
+        "de": "Terrakotta-Öllampen einer Million Einwohner, das ewige Feuer der Vesta, die Fackeln der 7.000 Vigiles und der nächtliche Schwerlastverkehr erzeugten das hellste Stadtlichtfeld der Antike."
+      }
+    },
+    {
+      "id": "nl_portus_ostia_pharos",
+      "nameZh": "奥斯蒂亚—波尔图斯四层帝国灯塔与夜泊船坞",
+      "nameI18n": {
+        "zh": "奥斯蒂亚—波尔图斯四层帝国灯塔与夜泊船坞",
+        "en": "Portus–Ostia Imperial Lighthouse & Nighttime Horrea Docks",
+        "de": "Kaiserlicher Leuchtturm von Portus–Ostia & Nachtkais"
+      },
+      "coords": [12.256, 41.778],
+      "spreadDeg": 0.18,
+      "validFrom": -27,
+      "validTo": 180,
+      "category": "harbor_beacon",
+      "intensityKeyframes": [
+        [-27, 0.62],
+        [46, 0.88],
+        [112, 0.95],
+        [160, 0.94],
+        [180, 0.82]
+      ],
+      "description": "克劳狄皇帝仿亚历山大灯塔于防波堤沉入巨船地基筑起多层导航火塔，图拉真扩建六角内港后昼夜指引巨型运粮船（Navis Oneraria）进港。",
+      "descriptionI18n": {
+        "zh": "克劳狄皇帝仿亚历山大灯塔于防波堤沉入巨船地基筑起多层导航火塔，图拉真扩建六角内港后昼夜指引巨型运粮船（Navis Oneraria）进港。",
+        "en": "Modeled on the Pharos of Alexandria by Claudius and expanded with Trajan's hexagonal harbor, this multi-tiered fire-tower guided heavy grain ships safely at night.",
+        "de": "Von Claudius nach dem Vorbild von Alexandria errichtet und unter Trajan erweitert, leitete dieser mehrstufige Feuerturm schwere Getreideschiffe bei Nacht."
+      }
+    },
+    {
+      "id": "nl_pharos_of_alexandria",
+      "nameZh": "亚历山大法罗斯大灯塔（世界七大奇迹昼夜火镜）",
+      "nameI18n": {
+        "zh": "亚历山大法罗斯大灯塔（世界七大奇迹昼夜火镜）",
+        "en": "Pharos of Alexandria (Great Harbor Fire-Tower)",
+        "de": "Pharos von Alexandria (Großes Hafenleuchtfeuer)"
+      },
+      "coords": [29.885, 31.214],
+      "spreadDeg": 0.24,
+      "validFrom": -27,
+      "validTo": 180,
+      "category": "harbor_beacon",
+      "intensityKeyframes": [
+        [-27, 0.96],
+        [69, 0.98],
+        [117, 1.0],
+        [180, 0.92]
+      ],
+      "description": "高逾百米的法罗斯岛石塔顶层彻夜燃起松脂与薪柴巨火，外海数十海里可见，是埃及公粮船队与东方商船出入大港的绝对光学基准点。",
+      "descriptionI18n": {
+        "zh": "高逾百米的法罗斯岛石塔顶层彻夜燃起松脂与薪柴巨火，外海数十海里可见，是埃及公粮船队与东方商船出入大港的绝对光学基准点。",
+        "en": "Rising over 100 meters on Pharos Island, its resin-fueled nocturnal furnace was visible dozens of miles offshore as the supreme optical beacon of Mediterranean navigation.",
+        "de": "Über 100 Meter hoch auf der Insel Pharos gelegen, war sein nächtliches Harzfeuer dutzende Seemeilen weit als wichtigstes Leuchtfeuer des Mittelmeers sichtbar."
+      }
+    },
+    {
+      "id": "nl_puteoli_misenum_fleet_fires",
+      "nameZh": "普特奥利商港与米塞努姆帝国第一舰队母港火号",
+      "nameI18n": {
+        "zh": "普特奥利商港与米塞努姆帝国第一舰队母港火号",
+        "en": "Puteoli Emporium & Classis Misenensis Naval Base Beacons",
+        "de": "Handelshafen Puteoli & Flottenbasis Classis Misenensis"
+      },
+      "coords": [14.086, 40.788],
+      "spreadDeg": 0.20,
+      "validFrom": -27,
+      "validTo": 180,
+      "category": "harbor_beacon",
+      "intensityKeyframes": [
+        [-27, 0.82],
+        [69, 0.88],
+        [117, 0.84],
+        [180, 0.76]
+      ],
+      "description": "米塞努姆驻扎护卫西地中海的帝国主力舰队（Classis Misenensis），与普特奥利防波堤拱廊灯塔、波佐利玻璃与铁器窑炉共同照亮那不勒斯北湾。",
+      "descriptionI18n": {
+        "zh": "米塞努姆驻扎护卫西地中海的帝国主力舰队（Classis Misenensis），与普特奥利防波堤拱廊灯塔、波佐利玻璃与铁器窑炉共同照亮那不勒斯北湾。",
+        "en": "Home port of the imperial western navy (Classis Misenensis) alongside Puteoli's mole beacons and glass/iron furnaces across the northern Bay of Naples.",
+        "de": "Heimathafen der westlichen Kaiserflotte (Classis Misenensis) samt Molenfeuern und Glas-/Eisenöfen von Puteoli am Golf von Neapel."
+      }
+    },
+    {
+      "id": "nl_rio_tinto_baetica_smelting",
+      "nameZh": "贝蒂卡里奥廷托银铜矿昼夜焙烧冶炼炉群",
+      "nameI18n": {
+        "zh": "贝蒂卡里奥廷托银铜矿昼夜焙烧冶炼炉群",
+        "en": "Rio Tinto & Sierra Morena 24h Silver-Copper Smelting Furnaces",
+        "de": "24h-Silber- und Kupferschmelzöfen von Rio Tinto (Baetica)"
+      },
+      "coords": [-6.56, 37.70],
+      "spreadDeg": 0.22,
+      "validFrom": -27,
+      "validTo": 180,
+      "category": "smelting_furnace",
+      "intensityKeyframes": [
+        [-27, 0.74],
+        [69, 0.90],
+        [117, 0.95],
+        [165, 0.88],
+        [180, 0.72]
+      ],
+      "description": "支撑罗马第纳尔（Denarius）银币与青铜铸币的巨型帝国矿区，数百万吨古炉渣印证其鼓风竖炉昼夜不息的高温火光（格陵兰冰芯铅污染峰值亦对应此期）。",
+      "descriptionI18n": {
+        "zh": "支撑罗马第纳尔（Denarius）银币与青铜铸币的巨型帝国矿区，数百万吨古炉渣印证其鼓风竖炉昼夜不息的高温火光（格陵兰冰芯铅污染峰值亦对应此期）。",
+        "en": "Imperial mining complex minting bullion for the Roman denarius; millions of tons of ancient slag and Greenland ice-core lead peaks attest to continuous 24h smelting fires.",
+        "de": "Kaiserliches Bergbaurevier für die Denar-Prägung; Millionen Tonnen Schlacke und Bleispitzen im Grönlandeis belegen den 24-Stunden-Schmelzbetrieb."
+      }
+    }
+  ],
+  "transportRoutes": [
+    {
+      "id": "rome_alexandria_puteoli_ostia_grain",
+      "nameZh": "亚历山大港—克里特南翼—西西里外海—奥斯蒂亚帝国公粮主干线",
+      "nameI18n": {
+        "zh": "亚历山大港—克里特南翼—西西里外海—奥斯蒂亚帝国公粮主干线",
+        "en": "Alexandria–Crete–Ostia Imperial Grain Fleet Trunk (Classis Alexandrina)",
+        "de": "Kaiserliche Getreidehauptlinie Alexandria–Kreta–Ostia (Classis Alexandrina)"
+      },
+      "routeType": "maritime",
+      "originName": "亚历山大港 (Alexandria)",
+      "originNameI18n": {
+        "zh": "亚历山大港 (Alexandria)",
+        "en": "Alexandria (Aegyptus)",
+        "de": "Alexandria (Aegyptus)"
+      },
+      "destinationName": "奥斯蒂亚 / 波尔图斯港 (Ostia / Portus)",
+      "destinationNameI18n": {
+        "zh": "奥斯蒂亚 / 波尔图斯港 (Ostia / Portus)",
+        "en": "Ostia / Portus (Rome)",
+        "de": "Ostia / Portus (Rom)"
+      },
+      "cargoSummary": "尼罗河小麦公粮（年运量约 1.35 亿莫迪 ≈ 10 万吨）、纸莎草卷轴、东方胡椒与亚历山大玻璃器",
+      "cargoSummaryI18n": {
+        "zh": "尼罗河小麦公粮（年运量约 1.35 亿莫迪 ≈ 10 万吨）、纸莎草卷轴、东方胡椒与亚历山大玻璃器",
+        "en": "Egyptian state wheat (~100,000+ tons/yr), papyrus rolls, Indian Ocean pepper, and Alexandrian glassware",
+        "de": "Ägyptisches Staatsgetreide (über 100.000 t/Jahr), Papyrusrollen, indischer Pfeffer und alexandrinisches Glas"
+      },
+      "openedYear": -27,
+      "closedYear": 180,
+      "waypoints": [
+        [29.85, 31.32],
+        [28.20, 32.80],
+        [25.20, 34.35],
+        [21.60, 35.60],
+        [16.20, 36.20],
+        [12.10, 37.35],
+        [11.95, 39.20],
+        [12.05, 40.75],
+        [12.15, 41.65]
+      ],
+      "usageKeyframes": [
+        [-27, 420],
+        [50, 560],
+        [117, 680],
+        [160, 660],
+        [180, 510]
+      ],
+      "sourceCitation": "塞涅卡《道德书简》第 77 封 (Seneca, Ep. 77)；琉善《航船或愿望》(Lucian, Navigium)"
+    },
+    {
+      "id": "rome_carthage_ostia_annona",
+      "nameZh": "迦太基港—第勒尼安海—奥斯蒂亚北非公粮与红陶快线",
+      "nameI18n": {
+        "zh": "迦太基港—第勒尼安海—奥斯蒂亚北非公粮与红陶快线",
+        "en": "Carthage–Tyrrhenian–Ostia North African Annona & Red-Slip Express",
+        "de": "Nordafrikanische Annona-Schnelllinie Karthago–Ostia"
+      },
+      "routeType": "maritime",
+      "originName": "迦太基港 (Carthago)",
+      "originNameI18n": {
+        "zh": "迦太基港 (Carthago)",
+        "en": "Carthage (Africa Proconsularis)",
+        "de": "Karthago (Africa Proconsularis)"
+      },
+      "destinationName": "奥斯蒂亚 / 波尔图斯港 (Ostia / Portus)",
+      "destinationNameI18n": {
+        "zh": "奥斯蒂亚 / 波尔图斯港 (Ostia / Portus)",
+        "en": "Ostia / Portus (Rome)",
+        "de": "Ostia / Portus (Rom)"
+      },
+      "cargoSummary": "阿非利加硬粒小麦、北非橄榄油、阿非利加红光陶（Terra Sigillata Chiara）与斗兽场珍兽",
+      "cargoSummaryI18n": {
+        "zh": "阿非利加硬粒小麦、北非橄榄油、阿非利加红光陶（Terra Sigillata Chiara）与斗兽场珍兽",
+        "en": "North African durum wheat, olive oil, African Red Slip tableware, and amphitheater beasts",
+        "de": "Nordafrikanischer Hartweizen, Olivenöl, Terra Sigillata Chiara und Amphitheater-Wildtiere"
+      },
+      "openedYear": -27,
+      "closedYear": 180,
+      "waypoints": [
+        [10.45, 37.05],
+        [11.05, 38.15],
+        [11.60, 39.55],
+        [12.00, 40.80],
+        [12.15, 41.65]
+      ],
+      "usageKeyframes": [
+        [-27, 360],
+        [69, 540],
+        [117, 720],
+        [160, 760],
+        [180, 620]
+      ],
+      "sourceCitation": "老普林尼《自然史》第 19 卷（迦太基至奥斯蒂亚顺风两日航程记述）；奥斯蒂亚行会广场马赛克铭文"
+    },
+    {
+      "id": "rome_baetica_ostia_olive_oil",
+      "nameZh": "加的斯—直布罗陀海峡—撒丁南岸—奥斯蒂亚橄榄油与银锭航线",
+      "nameI18n": {
+        "zh": "加的斯—直布罗陀海峡—撒丁南岸—奥斯蒂亚橄榄油与银锭航线",
+        "en": "Gades–Gibraltar–Ostia Baetican Olive Oil & Silver Bullion Route",
+        "de": "Baetische Olivenöl- & Silberbarrenroute Gades–Gibraltar–Ostia"
+      },
+      "routeType": "maritime",
+      "originName": "加的斯外港 / 贝蒂卡河口 (Gades)",
+      "originNameI18n": {
+        "zh": "加的斯外港 / 贝蒂卡河口 (Gades)",
+        "en": "Gades / Baetica Estuary",
+        "de": "Gades / Baetica-Mündung"
+      },
+      "destinationName": "奥斯蒂亚 / 台伯河商业码头 (Emporium)",
+      "destinationNameI18n": {
+        "zh": "奥斯蒂亚 / 台伯河商业码头 (Emporium)",
+        "en": "Ostia / Rome Emporium",
+        "de": "Ostia / Römischer Emporium-Hafen"
+      },
+      "cargoSummary": "Dressel 20 双耳陶罐装贝蒂卡橄榄油、鱼露（Garum）及里奥廷托银铅铜锭",
+      "cargoSummaryI18n": {
+        "zh": "Dressel 20 双耳陶罐装贝蒂卡橄榄油、鱼露（Garum）及里奥廷托银铅铜锭",
+        "en": "Dressel 20 Baetican olive oil amphorae, garum fish sauce, and Rio Tinto silver/lead/copper ingots",
+        "de": "Baetisches Olivenöl in Dressel-20-Amphoren, Garum-Fischsauce sowie Silber-, Blei- und Kupferbarren"
+      },
+      "openedYear": -27,
+      "closedYear": 180,
+      "waypoints": [
+        [-6.55, 36.35],
+        [-5.55, 35.95],
+        [-3.50, 36.15],
+        [-0.20, 37.15],
+        [3.60, 38.60],
+        [7.80, 38.65],
+        [10.85, 39.85],
+        [12.15, 41.65]
+      ],
+      "usageKeyframes": [
+        [-27, 240],
+        [69, 390],
+        [117, 480],
+        [160, 495],
+        [180, 410]
+      ],
+      "sourceCitation": "斯特拉波《地理志》第 3 卷 (Strabo, III.2)；罗马泰斯塔乔山 (Monte Testaccio) 铭文陶片档案"
+    },
+    {
+      "id": "rome_narbo_massilia_coastal",
+      "nameZh": "奥斯蒂亚—利古里亚外海—马西利亚高卢葡萄酒与金属贸易线",
+      "nameI18n": {
+        "zh": "奥斯蒂亚—利古里亚外海—马西利亚高卢葡萄酒与金属贸易线",
+        "en": "Ostia–Ligurian Sea–Massilia Gallic Wine & Metal Trade Lane",
+        "de": "Gallische Wein- & Metallhandelsroute Ostia–Ligurisches Meer–Massilia"
+      },
+      "routeType": "maritime",
+      "originName": "马西利亚外港 (Massilia)",
+      "originNameI18n": {
+        "zh": "马西利亚外港 (Massilia)",
+        "en": "Massilia (Gallia Narbonensis)",
+        "de": "Massilia (Gallia Narbonensis)"
+      },
+      "destinationName": "奥斯蒂亚港 (Ostia)",
+      "destinationNameI18n": {
+        "zh": "奥斯蒂亚港 (Ostia)",
+        "en": "Ostia (Italia)",
+        "de": "Ostia (Italia)"
+      },
+      "cargoSummary": "纳博讷高卢葡萄酒、拉格劳费森克红光陶、不列颠转口锡锭与罗讷河木材",
+      "cargoSummaryI18n": {
+        "zh": "纳博讷高卢葡萄酒、拉格劳费森克红光陶、不列颠转口锡锭与罗讷河木材",
+        "en": "Narbonensian wine, La Graufesenque samian ware, British tin ingots, and Rhône timber",
+        "de": "Gallischer Wein, Terra Sigillata aus La Graufesenque, britisches Zinn und Rhône-Bauholz"
+      },
+      "openedYear": -27,
+      "closedYear": 180,
+      "waypoints": [
+        [12.15, 41.65],
+        [10.85, 42.05],
+        [9.65, 42.95],
+        [8.00, 43.35],
+        [6.60, 42.85],
+        [5.25, 43.05]
+      ],
+      "usageKeyframes": [
+        [-27, 210],
+        [69, 310],
+        [117, 340],
+        [180, 290]
+      ],
+      "sourceCitation": "迪奥多罗斯《历史丛书》第 5 卷；阿尔勒—罗讷 3 号古罗马沉船考古报告"
+    },
+    {
+      "id": "rome_brundisium_aegean_orient",
+      "nameZh": "布林迪西—爱奥尼亚海—爱琴海东方军政邮驿与大理石航线",
+      "nameI18n": {
+        "zh": "布林迪西—爱奥尼亚海—爱琴海东方军政邮驿与大理石航线",
+        "en": "Brundisium–Ionian–Aegean Imperial Dispatch & Marble Corridor",
+        "de": "Kaiserliche Kurier- & Marmorlinie Brundisium–Ionisches Meer–Ägäis"
+      },
+      "routeType": "maritime",
+      "originName": "布林迪西军商港 (Brundisium)",
+      "originNameI18n": {
+        "zh": "布林迪西军商港 (Brundisium)",
+        "en": "Brundisium (Apulia)",
+        "de": "Brundisium (Apulia)"
+      },
+      "destinationName": "以弗所 / 爱琴东岸口岸 (Ephesus Offshore)",
+      "destinationNameI18n": {
+        "zh": "以弗所 / 爱琴东岸口岸 (Ephesus Offshore)",
+        "en": "Ephesus / Eastern Aegean",
+        "de": "Ephesos / Ostägäis"
+      },
+      "cargoSummary": "亚壁古道接驳帝国官邮、希腊与小亚细亚彩色大理石柱、行省赋税与哲学典籍",
+      "cargoSummaryI18n": {
+        "zh": "亚壁古道接驳帝国官邮、希腊与小亚细亚彩色大理石柱、行省赋税与哲学典籍",
+        "en": "Via Appia imperial dispatches, polychrome Aegean/Phrygian marble columns, provincial tribute, and manuscripts",
+        "de": "Kaiserliche Kurierpost der Via Appia, polychromer Marmor, Provinzialsteuern und Handschriften"
+      },
+      "openedYear": -27,
+      "closedYear": 180,
+      "waypoints": [
+        [18.12, 40.68],
+        [19.10, 39.60],
+        [20.20, 37.60],
+        [22.50, 36.10],
+        [25.00, 36.05],
+        [27.05, 37.40]
+      ],
+      "usageKeyframes": [
+        [-27, 280],
+        [69, 340],
+        [117, 410],
+        [180, 360]
+      ],
+      "sourceCitation": "斯特拉波《地理志》第 6 卷 (Strabo, VI.3.7)；贺拉斯《讽刺诗》布林迪西纪行 (Horace, Satires I.5)"
+    }
+  ],
+  "speciesDiscoveries": [
+    {
+      "id": "sp_dioscorides_gentiana_lutea",
+      "commonNameZh": "黄龙胆（伊利里亚解热药根）",
+      "commonNameI18n": {
+        "zh": "黄龙胆（伊利里亚解热药根）",
+        "en": "Great Yellow Gentian",
+        "de": "Gelber Enzian"
+      },
+      "scientificName": "Gentiana lutea",
+      "classicalSourceName": "γεντιανή (Gentianē · 希/拉药典原名)",
+      "kingdom": "plantae",
+      "discoveryYear": 65,
+      "discovererZh": "佩达尼乌斯·迪奥斯科里德斯（《药物论》原典系统记述者）",
+      "discovererEn": "Recorded by Pedanius Dioscorides (De Materia Medica)",
+      "discovererI18n": {
+        "zh": "佩达尼乌斯·迪奥斯科里德斯（《药物论》原典系统记述者）",
+        "en": "Recorded by Pedanius Dioscorides (De Materia Medica)",
+        "de": "Überliefert durch Pedanios Dioskurides (De Materia Medica)"
+      },
+      "locationNameZh": "意大利与阿尔卑斯军团药圃记述传统",
+      "locationNameI18n": {
+        "zh": "意大利与阿尔卑斯军团药圃记述传统",
+        "en": "Italian & Alpine Pharmacobotanical Tradition",
+        "de": "Italisch-alpine Heilpflanzentradition"
+      },
+      "coords": [13.25, 42.10],
+      "historicalNote": "尼禄时代随军医官迪奥斯科里德斯于约公元 65 年成书《药物论》第 3 卷详述其高山根茎形态与苦味健胃解毒功效，奠定此后一千五百年地中海与欧洲植物药学基准。",
+      "historicalNoteI18n": {
+        "zh": "尼禄时代随军医官迪奥斯科里德斯于约公元 65 年成书《药物论》第 3 卷详述其高山根茎形态与苦味健胃解毒功效，奠定此后一千五百年地中海与欧洲植物药学基准。",
+        "en": "Described systematically ca. 65 CE in Book III of Dioscorides' De Materia Medica, establishing the canonical Mediterranean pharmacological text for 1,500 years.",
+        "de": "Um 65 n. Chr. in Buch III von Dioskurides' De Materia Medica systematisch beschrieben; 1.500 Jahre lang Standardwerk der europäischen Pharmakobotanik."
+      },
+      "sourceCitation": "迪奥斯科里德斯《药物论》第 3 卷第 3 章 (Dioscorides, De Materia Medica III.3)"
+    },
+    {
+      "id": "sp_pliny_prunus_armeniaca_campania",
+      "commonNameZh": "亚美尼亚杏（引种意大利果园记载）",
+      "commonNameI18n": {
+        "zh": "亚美尼亚杏（引种意大利果园记载）",
+        "en": "Apricot (Armenian Plum in Roman Orchards)",
+        "de": "Aprikose (Armenische Pflaume in italischen Gärten)"
+      },
+      "scientificName": "Prunus armeniaca",
+      "classicalSourceName": "Mala Armeniaca / Praecocia (拉丁原典名)",
+      "kingdom": "plantae",
+      "discoveryYear": 77,
+      "discovererZh": "老普林尼（《自然史》原典博物记述者）",
+      "discovererEn": "Recorded by Pliny the Elder (Naturalis Historia)",
+      "discovererI18n": {
+        "zh": "老普林尼（《自然史》原典博物记述者）",
+        "en": "Recorded by Pliny the Elder (Naturalis Historia)",
+        "de": "Überliefert durch Plinius den Älteren (Naturalis Historia)"
+      },
+      "locationNameZh": "罗马与坎帕尼亚果园带",
+      "locationNameI18n": {
+        "zh": "罗马与坎帕尼亚果园带",
+        "en": "Rome & Campanian Orchards",
+        "de": "Obstgärten Roms & Kampaniens"
+      },
+      "coords": [14.38, 40.76],
+      "historicalNote": "老普林尼于公元 77 年献呈提图斯的《自然史》第 15 卷明确记载该果树约三十年前刚引进罗马城并以高价售卖，见证元首制盛期跨欧亚果树引种网络。",
+      "historicalNoteI18n": {
+        "zh": "老普林尼于公元 77 年献呈提图斯的《自然史》第 15 卷明确记载该果树约三十年前刚引进罗马城并以高价售卖，见证元首制盛期跨欧亚果树引种网络。",
+        "en": "Recorded by Pliny the Elder in 77 CE (Naturalis Historia XV.11) as introduced to Roman orchards ~30 years earlier, documenting Eurasian horticultural exchange.",
+        "de": "77 n. Chr. von Plinius dem Älteren (Naturalis Historia XV.11) als rund dreißig Jahre zuvor in Rom eingeführte Edelobstsorte dokumentiert."
+      },
+      "sourceCitation": "老普林尼《自然史》第 15 卷第 11 章 (Pliny, Naturalis Historia XV.11)"
+    },
+    {
+      "id": "sp_pliny_citrus_medica",
+      "commonNameZh": "枸橼 / 香橼（罗马宫苑药用柑橘属先驱）",
+      "commonNameI18n": {
+        "zh": "枸橼 / 香橼（罗马宫苑药用柑橘属先驱）",
+        "en": "Citron (Earliest Mediterranean Citrus)",
+        "de": "Zitronatzitrone (Früheste Zitrusfrucht im Mittelmeerraum)"
+      },
+      "scientificName": "Citrus medica",
+      "classicalSourceName": "Malum citreum / Malum Medicum (拉丁原典名)",
+      "kingdom": "plantae",
+      "discoveryYear": 77,
+      "discovererZh": "老普林尼（《自然史》原典博物记述者）",
+      "discovererEn": "Recorded by Pliny the Elder (Naturalis Historia)",
+      "discovererI18n": {
+        "zh": "老普林尼（《自然史》原典博物记述者）",
+        "en": "Recorded by Pliny the Elder (Naturalis Historia)",
+        "de": "Überliefert durch Plinius den Älteren (Naturalis Historia)"
+      },
+      "locationNameZh": "拉丁姆贵族别墅透气陶盆引种区",
+      "locationNameI18n": {
+        "zh": "拉丁姆贵族别墅透气陶盆引种区",
+        "en": "Latium Villa Breathing-Pot Cultivation",
+        "de": "Latium-Villenkultur in belüfteten Tongefäßen"
+      },
+      "coords": [12.56, 41.82],
+      "historicalNote": "古典地中海最早确立的柑橘属植物；老普林尼详述罗马人以透气陶瓮跨海引种其树苗以作驱虫香料与解毒药材。",
+      "historicalNoteI18n": {
+        "zh": "古典地中海最早确立的柑橘属植物；老普林尼详述罗马人以透气陶瓮跨海引种其树苗以作驱虫香料与解毒药材。",
+        "en": "Earliest Citrus species established around the Roman Mediterranean; Pliny details importing saplings in perforated clay pots for aromatic and medicinal use.",
+        "de": "Älteste im römischen Mittelmeerraum kultivierte Zitrusart; Plinius beschreibt den Transport junger Bäume in durchlöcherten Tongefäßen."
+      },
+      "sourceCitation": "老普林尼《自然史》第 12 卷第 7 章 (Pliny, Naturalis Historia XII.7)"
+    },
+    {
+      "id": "sp_galen_macaca_sylvanus_anatomy",
+      "commonNameZh": "地中海猕猴 / 巴巴里猕猴（盖伦比较解剖学实证物种）",
+      "commonNameI18n": {
+        "zh": "地中海猕猴 / 巴巴里猕猴（盖伦比较解剖学实证物种）",
+        "en": "Barbary Macaque (Galen's Comparative Anatomy Subject)",
+        "de": "Berberaffe (Galens Modellorganismus der vergleichenden Anatomie)"
+      },
+      "scientificName": "Macaca sylvanus",
+      "classicalSourceName": "πίθηκος (Pithēkos · 盖伦希腊医学原典名)",
+      "kingdom": "animalia",
+      "discoveryYear": 163,
+      "discovererZh": "帕加马的盖伦（罗马公开解剖演示与原典记述者）",
+      "discovererEn": "Recorded by Galen of Pergamon (De Anatomicis Administrationibus)",
+      "discovererI18n": {
+        "zh": "帕加马的盖伦（罗马公开解剖演示与原典记述者）",
+        "en": "Recorded by Galen of Pergamon (De Anatomicis Administrationibus)",
+        "de": "Überliefert durch Galenos von Pergamon (De Anatomicis Administrationibus)"
+      },
+      "locationNameZh": "罗马和平神庙讲学堂（北非输入活体与标本）",
+      "locationNameI18n": {
+        "zh": "罗马和平神庙讲学堂（北非输入活体与标本）",
+        "en": "Temple of Peace Auditory, Rome (North African specimens)",
+        "de": "Hörsaal am Friedenstempel in Rom (nordafrikanische Exemplare)"
+      },
+      "coords": [12.488, 41.893],
+      "historicalNote": "因罗马法禁止人体解剖，御医盖伦在罗马系统解剖北非输入的巴巴里猕猴并精确测绘喉返神经、脑神经与心血管构造，铸就古典医学解剖体系。",
+      "historicalNoteI18n": {
+        "zh": "因罗马法禁止人体解剖，御医盖伦在罗马系统解剖北非输入的巴巴里猕猴并精确测绘喉返神经、脑神经与心血管构造，铸就古典医学解剖体系。",
+        "en": "Because Roman law restricted human dissection, Galen systematically dissected North African Barbary macaques in Rome (~163 CE) to map cranial and recurrent laryngeal nerves.",
+        "de": "Da römische Gesetze Sektionen am Menschen untersagten, sezierte Galen um 163 n. Chr. in Rom nordafrikanische Berberaffen und kartierte Kehlkopf- sowie Hirnnerven."
+      },
+      "sourceCitation": "盖伦《解剖程序》(Galen, De Anatomicis Administrationibus I & VI)"
+    }
+  ],
+  "mortalityCatastrophes": [
+    {
+      "id": "cat_great_fire_of_rome_64ce",
+      "nameZh": "公元 64 年罗马城大火",
+      "nameI18n": {
+        "zh": "公元 64 年罗马城大火",
+        "en": "Great Fire of Rome (64 CE)",
+        "de": "Großer Brand Roms (64 n. Chr.)"
+      },
+      "causeCategory": "siege_famine",
+      "startYear": 64,
+      "endYear": 64,
+      "estimatedDeaths": 12000,
+      "locationNameZh": "罗马大竞技场至帕拉蒂尼与埃斯奎利诺山街区",
+      "locationNameI18n": {
+        "zh": "罗马大竞技场至帕拉蒂尼与埃斯奎利诺山街区",
+        "en": "Circus Maximus, Palatine & Esquiline Districts, Rome",
+        "de": "Circus Maximus, Palatin & Esquilin in Rom"
+      },
+      "coords": [12.486, 41.886],
+      "spreadDeg": 0.25,
+      "historicalNote": "大火连烧六日七夜，罗马十四行政区中三区夷为平地、七区严重焚毁；灾后尼禄颁布防火石砖拱廊与街道拓宽新规。",
+      "historicalNoteI18n": {
+        "zh": "大火连烧六日七夜，罗马十四行政区中三区夷为平地、七区严重焚毁；灾后尼禄颁布防火石砖拱廊与街道拓宽新规。",
+        "en": "Raging for over six days from the Circus Maximus, the blaze leveled three of Rome's fourteen districts and severely damaged seven, prompting fireproof brick urban codes.",
+        "de": "Der über sechs Tage wütende Brand zerstörte drei der vierzehn Regionen Roms vollständig und beschädigte sieben schwer, woraufhin feuerfeste Bauvorschriften erlassen wurden."
+      },
+      "sourceCitation": "塔西佗《编年史》第 15 卷第 38–43 章 (Tacitus, Annales XV.38–43)"
+    },
+    {
+      "id": "cat_first_judaean_war_70ce",
+      "nameZh": "第一次犹太—罗马战争与耶路撒冷围城浩劫",
+      "nameI18n": {
+        "zh": "第一次犹太—罗马战争与耶路撒冷围城浩劫",
+        "en": "First Jewish–Roman War & Siege of Jerusalem",
+        "de": "Erster Jüdisch-Römischer Krieg & Belagerung Jerusalems"
+      },
+      "causeCategory": "warfare",
+      "startYear": 66,
+      "endYear": 73,
+      "estimatedDeaths": 350000,
+      "locationNameZh": "犹太行省与耶路撒冷城",
+      "locationNameI18n": {
+        "zh": "犹太行省与耶路撒冷城",
+        "en": "Judaea & Jerusalem",
+        "de": "Judäa & Jerusalem"
+      },
+      "coords": [35.235, 31.778],
+      "spreadDeg": 0.65,
+      "historicalNote": "韦斯帕芗与提图斯率四个罗马军团围攻耶路撒冷，围城饥荒与巷战造成惨重人口伤亡与第二圣殿焚毁（现代史学折算全程死伤逾三十万）。",
+      "historicalNoteI18n": {
+        "zh": "韦斯帕芗与提图斯率四个罗马军团围攻耶路撒冷，围城饥荒与巷战造成惨重人口伤亡与第二圣殿焚毁（现代史学折算全程死伤逾三十万）。",
+        "en": "Besieged by four Roman legions under Vespasian and Titus, culminating in severe siege famine, mass casualties, and the destruction of the Second Temple in 70 CE.",
+        "de": "Belagerung durch vier römische Legionen unter Vespasian und Titus mit schwerer Hungersnot, hohen Opferzahlen und der Zerstörung des Zweiten Tempels 70 n. Chr."
+      },
+      "sourceCitation": "约瑟夫斯《犹太战记》第 5–6 卷 (Josephus, Bellum Judaicum)"
+    },
+    {
+      "id": "cat_vesuvius_eruption_79ce",
+      "nameZh": "公元 79 年维苏威火山普林尼式大喷发",
+      "nameI18n": {
+        "zh": "公元 79 年维苏威火山普林尼式大喷发",
+        "en": "Eruption of Mount Vesuvius (Pompeii & Herculaneum, 79 CE)",
+        "de": "Ausbruch des Vesuvs (Pompeji & Herculaneum, 79 n. Chr.)"
+      },
+      "causeCategory": "siege_famine",
+      "startYear": 79,
+      "endYear": 79,
+      "estimatedDeaths": 16000,
+      "locationNameZh": "庞贝、赫库兰尼姆、奥普隆蒂斯与斯塔比亚",
+      "locationNameI18n": {
+        "zh": "庞贝、赫库兰尼姆、奥普隆蒂斯与斯塔比亚",
+        "en": "Pompeii, Herculaneum, Oplontis & Stabiae",
+        "de": "Pompeji, Herculaneum, Oplontis & Stabiae"
+      },
+      "coords": [14.486, 40.751],
+      "spreadDeg": 0.35,
+      "historicalNote": "高温火山碎屑涌流与数米厚浮石层瞬时封存庞贝与赫库兰尼姆古城；米塞努姆舰队统帅老普林尼率舰跨湾救援途中殉难，小普林尼留下人类史上首份精确火山学目击记录。",
+      "historicalNoteI18n": {
+        "zh": "高温火山碎屑涌流与数米厚浮石层瞬时封存庞贝与赫库兰尼姆古城；米塞努姆舰队统帅老普林尼率舰跨湾救援途中殉难，小普林尼留下人类史上首份精确火山学目击记录。",
+        "en": "Pyroclastic surges and pumice buried Pompeii and Herculaneum; Admiral Pliny the Elder perished leading naval rescue operations while Pliny the Younger recorded history's first volcanological eyewitness account.",
+        "de": "Pyroklastische Ströme begruben Pompeji und Herculaneum; Flottenpräfekt Plinius der Ältere starb beim Rettungseinsatz, während Plinius der Jüngere den ersten vulkanologischen Augenzeugenbericht verfasste."
+      },
+      "sourceCitation": "小普林尼致塔西佗书信 (Pliny the Younger, Epistulae VI.16 & VI.20)"
+    },
+    {
+      "id": "cat_antonine_plague_165ce",
+      "nameZh": "安敦尼大瘟疫（盖伦瘟疫）跨地中海大流行",
+      "nameI18n": {
+        "zh": "安敦尼大瘟疫（盖伦瘟疫）跨地中海大流行",
+        "en": "Antonine Plague (Plague of Galen, 165–180 CE)",
+        "de": "Antoninische Pest (Pest des Galen, 165–180 n. Chr.)"
+      },
+      "causeCategory": "plague",
+      "startYear": 165,
+      "endYear": 180,
+      "estimatedDeaths": 5000000,
+      "locationNameZh": "罗马都城、意大利港口、埃及与帝国军团防线",
+      "locationNameI18n": {
+        "zh": "罗马都城、意大利港口、埃及与帝国军团防线",
+        "en": "Rome, Italian Ports, Egypt & Imperial Legionary Frontiers",
+        "de": "Rom, italische Häfen, Ägypten & Legionsgrenzen"
+      },
+      "coords": [12.48, 41.89],
+      "spreadDeg": 0.95,
+      "historicalNote": "疑似天花病毒（Variola major）随维鲁斯东征帕提亚大军输入地中海海运网；高峰期罗马城单日死亡达 2,000 人，全帝国人口损耗约 7%–10%，深刻动摇兵源与赋税根基。",
+      "historicalNoteI18n": {
+        "zh": "疑似天花病毒（Variola major）随维鲁斯东征帕提亚大军输入地中海海运网；高峰期罗马城单日死亡达 2,000 人，全帝国人口损耗约 7%–10%，深刻动摇兵源与赋税根基。",
+        "en": "Likely smallpox introduced by troops returning from Mesopotamia across imperial sea lanes; daily mortality in Rome reached ~2,000 at peak, claiming ~5 million lives empire-wide.",
+        "de": "Vermutlich Pocken, eingeschleppt durch aus Mesopotamien heimkehrende Truppen über die Reichsseerouten; in Rom starben zeitweise 2.000 Menschen täglich, reichsweit rund 5 Millionen."
+      },
+      "sourceCitation": "盖伦《医术方法》第 5 卷；卡西乌斯·狄奥《罗马史》第 73 卷第 14 章",
+      "thermalSubZones": [
+        { "coords": [12.48, 41.89], "radiusLon": 0.65, "radiusLat": 0.55, "weightFactor": 1.0 },
+        { "coords": [14.25, 40.85], "radiusLon": 0.50, "radiusLat": 0.42, "weightFactor": 0.72 },
+        { "coords": [29.90, 31.20], "radiusLon": 0.60, "radiusLat": 0.50, "weightFactor": 0.85 },
+        { "coords": [13.37, 45.77], "radiusLon": 0.55, "radiusLat": 0.45, "weightFactor": 0.78 }
+      ]
+    }
+  ],
+  "spaceMissions": [],
+  "customEvents": [],
+  "books": []
+}

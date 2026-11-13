@@ -1,17 +1,19 @@
 import {
-  ATHENS_DATA_END_YEAR,
-  ATHENS_DATA_START_YEAR,
-  ATHENS_MORTALITY_CATASTROPHES,
-  ATHENS_NIGHT_LIGHTS,
-  ATHENS_POLITY_PHASES,
-  ATHENS_POPULATION_REGIONS,
-  ATHENS_SPECIES_DISCOVERIES,
-  ATHENS_TERRITORY_REGIONS,
-  ATHENS_TRANSPORT_ROUTES,
-  SOLAR_SYSTEM_BODIES,
-} from '../data/athensClassicalData';
+  computeDatasetYearBounds,
+  getMortalityCatastrophes,
+  getNightLightNodes,
+  getPolityPhases,
+  getPopulationNodes,
+  getSolarSystemBodies,
+  getSpeciesDiscoveries,
+  getTerritoryRegions,
+  getTransportRoutes,
+} from '../shared/atlasDataLayer';
 import {
   CelestialBodySpec,
+  GeoBBox,
+  ImportedPolityRecord,
+  ImportedTerritoryRecord,
   MortalityCatastrophe,
   NightLightNode,
   PolityPhase,
@@ -127,30 +129,74 @@ export function interpolateKeyframes(keyframes: [number, number][], year: number
   return last[1];
 }
 
-/**
- * 获取当前年份激活的雅典政权阶段与旗帜；
- * 若年份在政权出现之前（year < -500）或结束之后（year > -404），严格返回 null。
- */
-export function getActivePolityPhase(year: number): PolityPhase | null {
-  const yr = Math.round(year);
-  if (yr < ATHENS_DATA_START_YEAR || yr > ATHENS_DATA_END_YEAR) {
-    return null;
-  }
-  return (
-    ATHENS_POLITY_PHASES.find((phase) => yr >= phase.startYear && yr <= phase.endYear) ?? null
-  );
+function isYearWithinDatasetBounds(year: number): boolean {
+  const bounds = computeDatasetYearBounds();
+  if (!bounds) return false;
+  return year >= bounds.minYear && year <= bounds.maxYear;
+}
+
+function isRangeOverlappingDatasetBounds(rStart: number, rEnd: number): boolean {
+  const bounds = computeDatasetYearBounds();
+  if (!bounds) return false;
+  return rEnd >= bounds.minYear && rStart <= bounds.maxYear;
 }
 
 /**
- * 获取当前年份真实存在的政权领土多边形分片；
- * 在某一国家或政权出现之前（year < -500）或结束后（year > -404）严格返回空数组。
+ * Returns all active polity phases at `year` across loaded datasets.
  */
-export function getActiveTerritoryRegions(year: number): TerritoryRegion[] {
+export function getActivePolityPhases(year: number): ImportedPolityRecord[] {
   const yr = Math.round(year);
-  if (yr < ATHENS_DATA_START_YEAR || yr > ATHENS_DATA_END_YEAR) {
-    return [];
+  if (!isYearWithinDatasetBounds(yr)) return [];
+  return getPolityPhases().filter((phase) => yr >= phase.startYear && yr <= phase.endYear);
+}
+
+/**
+ * Returns the primary active polity phase at `year`, or `null` when outside active polity spans.
+ */
+export function getActivePolityPhase(year: number): PolityPhase | null {
+  const active = getActivePolityPhases(year);
+  return active[0] ?? null;
+}
+
+/**
+ * Resolves which active polity governs a territory at a given year (matching `polityId` first,
+ * then nearest capital coordinate when multiple contemporaneous polities coexist).
+ */
+export function resolvePolityForTerritory(
+  territory: { polityId?: string; approxBBox?: GeoBBox },
+  activePolities: ImportedPolityRecord[],
+): ImportedPolityRecord | null {
+  if (activePolities.length === 0) return null;
+  if (territory.polityId) {
+    const exact = activePolities.find((p) => p.id === territory.polityId);
+    if (exact) return exact;
   }
-  return ATHENS_TERRITORY_REGIONS.filter((reg) => yr >= reg.validFrom && yr <= reg.validTo);
+  if (activePolities.length === 1 || !territory.approxBBox) {
+    return activePolities[0];
+  }
+  const cx = (territory.approxBBox.minLon + territory.approxBBox.maxLon) * 0.5;
+  const cy = (territory.approxBBox.minLat + territory.approxBBox.maxLat) * 0.5;
+  let best = activePolities[0];
+  let bestDistSq = Infinity;
+  for (const pol of activePolities) {
+    const dx = pol.capitalCoords[0] - cx;
+    const dy = pol.capitalCoords[1] - cy;
+    const dSq = dx * dx + dy * dy;
+    if (dSq < bestDistSq) {
+      bestDistSq = dSq;
+      best = pol;
+    }
+  }
+  return best;
+}
+
+/**
+ * Returns active territory definitions at `year` from the unified data layer.
+ */
+export function getActiveTerritoryRegions(year: number): ImportedTerritoryRecord[] {
+  const yr = Math.round(year);
+  if (!isYearWithinDatasetBounds(yr)) return [];
+  return getTerritoryRegions().filter((reg) => yr >= reg.validFrom && yr <= reg.validTo);
 }
 
 function rgbToHex(r: number, g: number, b: number): string {
@@ -245,41 +291,43 @@ export function getActivePopulationNodes(
   year: number,
 ): Array<{ node: PopulationDensityNode; density: number }> {
   const yr = Math.round(year);
-  if (yr < ATHENS_DATA_START_YEAR || yr > ATHENS_DATA_END_YEAR) return [];
-  return ATHENS_POPULATION_REGIONS.filter((n) => yr >= n.validFrom && yr <= n.validTo).map(
-    (node) => ({
+  if (!isYearWithinDatasetBounds(yr)) return [];
+  return getPopulationNodes()
+    .filter((n) => yr >= n.validFrom && yr <= n.validTo)
+    .map((node) => ({
       node,
       density: interpolateKeyframes(node.densityKeyframes, yr),
-    }),
-  );
+    }));
 }
 
 export function getActiveNightLights(
   year: number,
 ): Array<{ node: NightLightNode; intensity: number }> {
   const yr = Math.round(year);
-  if (yr < ATHENS_DATA_START_YEAR || yr > ATHENS_DATA_END_YEAR) return [];
-  return ATHENS_NIGHT_LIGHTS.filter((n) => yr >= n.validFrom && yr <= n.validTo).map((node) => ({
-    node,
-    intensity: clamp(interpolateKeyframes(node.intensityKeyframes, yr), 0.05, 1),
-  }));
+  if (!isYearWithinDatasetBounds(yr)) return [];
+  return getNightLightNodes()
+    .filter((n) => yr >= n.validFrom && yr <= n.validTo)
+    .map((node) => ({
+      node,
+      intensity: clamp(interpolateKeyframes(node.intensityKeyframes, yr), 0.05, 1),
+    }));
 }
 
 export function getActiveTransportRoutes(
   year: number,
 ): Array<{ route: TransportRoute; annualTrips: number; colorHex: string }> {
   const yr = Math.round(year);
-  if (yr < ATHENS_DATA_START_YEAR || yr > ATHENS_DATA_END_YEAR) return [];
-  return ATHENS_TRANSPORT_ROUTES.filter((r) => yr >= r.openedYear && yr <= r.closedYear).map(
-    (route) => {
+  if (!isYearWithinDatasetBounds(yr)) return [];
+  return getTransportRoutes()
+    .filter((r) => yr >= r.openedYear && yr <= r.closedYear)
+    .map((route) => {
       const annualTrips = Math.round(interpolateKeyframes(route.usageKeyframes, yr));
       return {
         route,
         annualTrips,
         colorHex: routeUsageToWhiteRedHex(annualTrips),
       };
-    },
-  );
+    });
 }
 
 /**
@@ -323,23 +371,26 @@ export function computeMortalityEventEnvelope(
   year: number,
   selectedRange: TimeRangeSelection = null,
 ): number {
+  const bounds = computeDatasetYearBounds();
+  if (!bounds) return 0;
+
   if (selectedRange) {
     const [rawA, rawB] = selectedRange;
     const rStart = Math.min(rawA, rawB);
     const rEnd = Math.max(rawA, rawB);
-    if (rEnd < ATHENS_DATA_START_YEAR || rStart > ATHENS_DATA_END_YEAR) return 0;
+    if (rEnd < bounds.minYear || rStart > bounds.maxYear) return 0;
     if (ev.endYear >= rStart && ev.startYear <= rEnd) {
       return 1.0;
     }
     return 0;
   }
 
-  if (year < ATHENS_DATA_START_YEAR || year > ATHENS_DATA_END_YEAR) {
-    return 0;
-  }
-
   const fadeInSpan = 3.0;
   const fadeOutSpan = 8.0;
+
+  if (year < bounds.minYear || year > bounds.maxYear + fadeOutSpan) {
+    return 0;
+  }
 
   if (year <= ev.startYear - fadeInSpan || year >= ev.endYear + fadeOutSpan) {
     return 0;
@@ -362,22 +413,19 @@ export function getActiveSpeciesDiscoveries(
   year: number,
   selectedRange: TimeRangeSelection = null,
 ): SpeciesDiscovery[] {
+  const allSpecies = getSpeciesDiscoveries();
   if (selectedRange) {
     const [rawA, rawB] = selectedRange;
     const rStart = Math.min(rawA, rawB);
     const rEnd = Math.max(rawA, rawB);
-    if (rEnd < ATHENS_DATA_START_YEAR || rStart > ATHENS_DATA_END_YEAR) return [];
-    // 在时间段选取状态下，选中时间段内的所有物种发现气泡持续保留、不会消失
-    return ATHENS_SPECIES_DISCOVERIES.filter(
-      (sp) => sp.discoveryYear >= rStart && sp.discoveryYear <= rEnd,
-    );
+    if (!isRangeOverlappingDatasetBounds(rStart, rEnd)) return [];
+    return allSpecies.filter((sp) => sp.discoveryYear >= rStart && sp.discoveryYear <= rEnd);
   }
 
   const yr = Math.round(year);
-  if (yr < ATHENS_DATA_START_YEAR || yr > ATHENS_DATA_END_YEAR) return [];
-  // 常态单点模式下展示当前年份已发现且处于当时代观察窗口内的物种（避免跨世纪无限堆积）
+  if (!isYearWithinDatasetBounds(yr)) return [];
   const spotlightSpanYears = 22;
-  return ATHENS_SPECIES_DISCOVERIES.filter(
+  return allSpecies.filter(
     (sp) => yr >= sp.discoveryYear && yr <= sp.discoveryYear + spotlightSpanYears,
   );
 }
@@ -387,7 +435,7 @@ export function getActiveMortalityCatastrophesWithFade(
   selectedRange: TimeRangeSelection = null,
 ): Array<{ catastrophe: MortalityCatastrophe; envelope: number; magnitude: number }> {
   const out: Array<{ catastrophe: MortalityCatastrophe; envelope: number; magnitude: number }> = [];
-  for (const ev of ATHENS_MORTALITY_CATASTROPHES) {
+  for (const ev of getMortalityCatastrophes()) {
     const envelope = computeMortalityEventEnvelope(ev, year, selectedRange);
     if (envelope > 0.01) {
       out.push({
@@ -409,9 +457,9 @@ export function getActiveMortalityCatastrophes(
     return getActiveMortalityCatastrophesWithFade(year, selectedRange).map((x) => x.catastrophe);
   }
   const yr = Math.round(year);
-  if (yr < ATHENS_DATA_START_YEAR || yr > ATHENS_DATA_END_YEAR) return [];
+  if (!isYearWithinDatasetBounds(yr)) return [];
   if (cumulativeInEra) {
-    return ATHENS_MORTALITY_CATASTROPHES.filter((ev) => yr >= ev.startYear);
+    return getMortalityCatastrophes().filter((ev) => yr >= ev.startYear && yr <= ev.endYear + 100);
   }
   return getActiveMortalityCatastrophesWithFade(yr, null).map((x) => x.catastrophe);
 }
@@ -600,12 +648,13 @@ export function densifyAndSliceWaypoints(
 export function computeCelestialBodyXZ(
   body: CelestialBodySpec,
   yearFloat: number,
-  allBodies: CelestialBodySpec[] = SOLAR_SYSTEM_BODIES,
+  allBodies: CelestialBodySpec[] = getSolarSystemBodies(),
 ): [number, number] {
   if (body.kind === 'star' || body.orbitRadiusUnits === 0) {
     return [0, 0];
   }
-  const elapsedYears = yearFloat - ATHENS_DATA_START_YEAR;
+  const epochOriginYear = computeDatasetYearBounds()?.minYear ?? -500;
+  const elapsedYears = yearFloat - epochOriginYear;
   const angularVel = (Math.PI * 2) / body.orbitalPeriodYears;
   const angle = body.initialPhaseRad + elapsedYears * angularVel;
 

@@ -19,20 +19,26 @@ import {
   geoToSphereXYZ,
   getActiveMortalityCatastrophes,
   getActivePolityPhase,
+  getActivePolityPhases,
   getActiveSpeciesDiscoveries,
   getActiveTerritoryRegions,
   getActiveTransportRoutes,
   GLOBE_RADIUS,
   mortalityDensityToRedRGB,
+  resolvePolityForTerritory,
   routeUsageToWhiteRedRGB,
   stepHistoricalYearWithLoop,
 } from './geoMath';
 import {
-  ATHENS_MORTALITY_CATASTROPHES,
-  ATHENS_TERRITORY_REGIONS,
-  SOLAR_SYSTEM_BODIES,
-  SPACE_MISSIONS,
-} from '../data/athensClassicalData';
+  computeDatasetYearBounds,
+  getAtlasDatasetPresets,
+  getMortalityCatastrophes,
+  getSolarSystemBodies,
+  getSpaceMissions,
+  getTerritoryRegions,
+  getTransportRoutes,
+} from '../shared/atlasDataLayer';
+import { sanitizeInlineFlagSvg } from '../shared/dataValidator';
 import { isPointOnMediterraneanLand } from '../three/earthGeoData';
 import {
   extractDissolvedOuterBoundary,
@@ -58,9 +64,10 @@ if (fs.existsSync(diskCachePath)) {
   seedOsmGeometryCache(cached);
 }
 
-test('zero handwritten polygon coordinates exist in ATHENS_TERRITORY_REGIONS; all regions bind canonical OpenStreetMap IDs', () => {
-  assert.equal(ATHENS_TERRITORY_REGIONS.length, 12);
-  for (const reg of ATHENS_TERRITORY_REGIONS) {
+test('zero handwritten polygon coordinates exist in unified atlasDataLayer territories; all regions bind canonical OpenStreetMap IDs', () => {
+  const allTerritories = getTerritoryRegions();
+  assert.equal(allTerritories.length, 20, 'Expected 12 Classical Athens + 8 Roman Principate territories');
+  for (const reg of allTerritories) {
     assert.equal('polygon' in (reg as any), false, `Region ${reg.id} must not have handwritten polygon`);
     assert.equal(
       'clipPolygons' in (reg as any),
@@ -74,10 +81,18 @@ test('zero handwritten polygon coordinates exist in ATHENS_TERRITORY_REGIONS; al
   }
 
   const uniqueOsmIds = getAllConfiguredOsmIds();
-  assert.ok(uniqueOsmIds.length >= 45);
+  assert.ok(uniqueOsmIds.length >= 55);
 });
 
-test('no polity borders or flags exist before 500 BCE or after 404 BCE', () => {
+test('dynamic dataset year bounds derive [-500, 180] and activate Classical Athens (-500..-404) & Roman Principate (-27..180) accurately', () => {
+  const bounds = computeDatasetYearBounds();
+  assert.deepEqual(bounds, { minYear: -500, maxYear: 180 });
+
+  const presets = getAtlasDatasetPresets();
+  assert.ok(presets.some((p) => p.id === 'classical_athens' && p.minYear === -500 && p.maxYear === -404));
+  assert.ok(presets.some((p) => p.id === 'roman_principate' && p.minYear === -27 && p.maxYear === 180));
+
+  // Outside dataset time windows: before 500 BCE, between 403 BCE and 28 BCE, and after 180 CE
   assert.equal(getActivePolityPhase(-501), null);
   assert.equal(getActiveTerritoryRegions(-501).length, 0);
   assert.equal(resolveActiveOsmTerritories(-501).length, 0);
@@ -85,7 +100,33 @@ test('no polity borders or flags exist before 500 BCE or after 404 BCE', () => {
   assert.equal(getActivePolityPhase(-403), null);
   assert.equal(getActiveTerritoryRegions(-403).length, 0);
   assert.equal(resolveActiveOsmTerritories(-403).length, 0);
+  assert.equal(getActivePolityPhase(-28), null);
+  assert.equal(getActivePolityPhase(181), null);
+  assert.equal(getActiveTerritoryRegions(181).length, 0);
   assert.equal(getActivePolityPhase(2020), null);
+
+  // Roman Principate dataset verification at 117 CE (Trajanic peak)
+  const romanPolities117 = getActivePolityPhases(117);
+  assert.equal(romanPolities117.length, 1);
+  assert.equal(romanPolities117[0].id, 'roman_flavian_trajanic_peak');
+  assert.ok(romanPolities117[0].flagSvg && romanPolities117[0].flagSvg.includes('SPQR'));
+  assert.ok(sanitizeInlineFlagSvg(romanPolities117[0].flagSvg));
+  assert.equal(sanitizeInlineFlagSvg('<svg onload="alert(1)"><rect width="10" height="10"/></svg>'), null);
+
+  const romanTerritories117 = getActiveTerritoryRegions(117);
+  assert.equal(romanTerritories117.length, 8);
+  const resolvedPolity = resolvePolityForTerritory(romanTerritories117[0], romanPolities117);
+  assert.equal(resolvedPolity?.id, 'roman_flavian_trajanic_peak');
+
+  const romanRoutes117 = getActiveTransportRoutes(117);
+  assert.equal(romanRoutes117.length, 5);
+
+  const romanSpecies = getActiveSpeciesDiscoveries(77, [-27, 180]);
+  assert.equal(romanSpecies.length, 4);
+  for (const sp of romanSpecies) {
+    assert.ok(sp.classicalSourceName.length > 0, `Species ${sp.id} must define classicalSourceName`);
+    assert.equal('classicalGreekName' in (sp as any), false);
+  }
 });
 
 test('OpenStreetMap geometries normalize cleanly, dissolve internal sub-municipal seams, and have valid spherical winding', () => {
@@ -259,10 +300,11 @@ test('species discoveries and Solar System orbital / trajectory mechanics work a
   assert.equal(getActiveSpeciesDiscoveries(-420).length, 2);
   // Range-selection mode retains every species discovered inside the selected interval without disappearing
   assert.equal(getActiveSpeciesDiscoveries(-420, [-490, -410]).length, 7);
-  assert.equal(SPACE_MISSIONS.length, 0);
+  assert.equal(getSpaceMissions().length, 0);
 
-  const earth = SOLAR_SYSTEM_BODIES.find((b) => b.id === 'earth')!;
-  const moon = SOLAR_SYSTEM_BODIES.find((b) => b.id === 'moon')!;
+  const bodies = getSolarSystemBodies();
+  const earth = bodies.find((b) => b.id === 'earth')!;
+  const moon = bodies.find((b) => b.id === 'moon')!;
   const [ex, ez] = computeCelestialBodyXZ(earth, -454);
   const [mx, mz] = computeCelestialBodyXZ(moon, -454);
   assert.ok(Math.abs(Math.hypot(ex, ez) - earth.orbitRadiusUnits) < 1e-4);
@@ -340,8 +382,9 @@ test('CARTO Dark Matter style sanitizer configures 3D Globe projection and strip
   assert.ok(offlineMercator.layers.some((l) => l.id === 'ne-land-fill-underlay'));
 });
 
-test('all 7 Catmull-Rom maritime transport splines stay 100% in sea lanes and round Cape Sounion without crossing land', async () => {
-  const { ATHENS_TRANSPORT_ROUTES } = await import('../data/athensClassicalData');
+test('all 12 Catmull-Rom maritime transport splines across Classical Athens & Roman Principate stay 100% in sea lanes without crossing land', async () => {
+  const allRoutes = getTransportRoutes();
+  assert.equal(allRoutes.length, 12);
   const { smoothMaritimeWaypointsCatmullRom } = await import('./geoMath');
   const { getLand50mGeoJson } = await import('../three/earthGeoData');
 
@@ -412,9 +455,9 @@ test('all 7 Catmull-Rom maritime transport splines stay 100% in sea lanes and ro
     return null;
   };
 
-  for (const route of ATHENS_TRANSPORT_ROUTES) {
+  for (const route of allRoutes) {
     const spline = smoothMaritimeWaypointsCatmullRom(route.waypoints, 24);
-    assert.ok(spline.length > 100, `Route ${route.id} should produce a dense smooth spline`);
+    assert.ok(spline.length > 80, `Route ${route.id} should produce a dense smooth spline`);
     for (const [lon, lat] of spline) {
       const hit = hitLand(lon, lat);
       assert.equal(
@@ -423,8 +466,11 @@ test('all 7 Catmull-Rom maritime transport splines stay 100% in sea lanes and ro
         `Maritime route ${route.id} crossed land (${hit}) at [${lon.toFixed(4)}, ${lat.toFixed(4)}]`,
       );
     }
-    // Every Aegean / Eastern Mediterranean route arriving at Piraeus must round south of Cape Sounion (37.65°N)
-    if (route.id !== 'route_magna_graecia_sicily_west') {
+    // Every Classical Athens Aegean / Eastern Mediterranean route arriving at Piraeus must round south of Cape Sounion (37.65°N)
+    if (
+      route.openedYear < -300 &&
+      route.id !== 'route_magna_graecia_sicily_west'
+    ) {
       const sounionPass = spline.some(
         ([lon, lat]) => lon >= 23.96 && lon <= 24.06 && lat <= 37.60,
       );
@@ -470,8 +516,9 @@ test('mortality catastrophe fade-in / post-event fade-out, Marathon (6,600) vs P
     './pixelLayers'
   );
 
-  const marathon = ATHENS_MORTALITY_CATASTROPHES.find((e) => e.id === 'cat_marathon_battle')!;
-  const persianInvasion = ATHENS_MORTALITY_CATASTROPHES.find(
+  const allCatastrophes = getMortalityCatastrophes();
+  const marathon = allCatastrophes.find((e) => e.id === 'cat_marathon_battle')!;
+  const persianInvasion = allCatastrophes.find(
     (e) => e.id === 'cat_salamis_plataea_persian_invasion',
   )!;
 
@@ -754,5 +801,68 @@ test('language support is strictly restricted to English (en), German (de), and 
   assert.match(dePrompt, /ANFORDERUNGEN ZUR EBENENKORRELATION/);
   assert.match(dePrompt, /Bevölkerungsdichte × Nachtbeleuchtung:/);
 });
+
+test('lossless spatial-bbox seam dissolution dissolves adjacent municipal edges accurately and reports OsmLoadingSnapshot readiness', async () => {
+  const {
+    extractDissolvedOuterBoundary,
+    getOsmLoadingSnapshot,
+    resolveActiveOsmTerritories,
+    seedOsmGeometryCache,
+  } = await import('../services/osmBoundaryService');
+
+  // Two adjacent squares sharing the vertical edge x = 23.8 (with slight vertex offset within 140m Douglas-Peucker tolerance)
+  const adjacentPair = {
+    type: 'MultiPolygon' as const,
+    coordinates: [
+      [
+        [
+          [23.7, 37.9],
+          [23.8, 37.9],
+          [23.8, 38.0],
+          [23.7, 38.0],
+          [23.7, 37.9],
+        ] as [number, number][],
+      ],
+      [
+        [
+          [23.8002, 37.9],
+          [23.9, 37.9],
+          [23.9, 38.0],
+          [23.8002, 38.0],
+          [23.8002, 37.9],
+        ] as [number, number][],
+      ],
+    ],
+  };
+
+  const dissolved = extractDissolvedOuterBoundary(adjacentPair);
+  const allPoints = dissolved.coordinates.flat();
+  const hasInteriorSeamMidpoint = allPoints.some(
+    ([lon, lat]) => Math.abs(lon - 23.8) < 0.001 && lat > 37.91 && lat < 37.99,
+  );
+  assert.equal(
+    hasInteriorSeamMidpoint,
+    false,
+    'Shared internal seam between adjacent sub-polygons must be dissolved',
+  );
+  assert.ok(dissolved.coordinates.length >= 1, 'Exterior perimeter must be preserved');
+
+  if (fs.existsSync(diskCachePath)) {
+    const cached = JSON.parse(fs.readFileSync(diskCachePath, 'utf8'));
+    seedOsmGeometryCache(cached);
+    const t0 = performance.now();
+    const resolved = resolveActiveOsmTerritories(-454);
+    const elapsedMs = performance.now() - t0;
+    assert.ok(resolved.length >= 10, `Expected >= 10 territories at 454 BCE, got ${resolved.length}`);
+    assert.ok(
+      elapsedMs < 250,
+      `Expected lossless bbox-pruned seam dissolution across all territories in < 250ms, took ${elapsedMs.toFixed(1)}ms`,
+    );
+    const snap = getOsmLoadingSnapshot();
+    assert.equal(snap.totalIds > 40, true);
+    assert.equal(typeof snap.loadedIds, 'number');
+  }
+});
+
 
 

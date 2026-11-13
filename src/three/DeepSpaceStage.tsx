@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { SOLAR_SYSTEM_BODIES, SPACE_MISSIONS } from '../data/athensClassicalData';
+import { getSolarSystemBodies, getSpaceMissions } from '../shared/atlasDataLayer';
 import { AppLanguage, CelestialBodySpec, SelectedEntity, SpaceStage } from '../types/history';
 import {
   formatYearByLang,
@@ -307,11 +307,14 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
     applyCameraCommand: (kind: 'zoom_in' | 'zoom_out' | 'reset_north') => void;
   } | null>(null);
 
+  const solarBodies = useMemo(() => getSolarSystemBodies(), []);
+  const spaceMissions = useMemo(() => getSpaceMissions(), [currentYear]);
+
   const focusedBodySpec = useMemo(
     () =>
-      SOLAR_SYSTEM_BODIES.find((b) => b.id === focusedBodyId) ??
-      SOLAR_SYSTEM_BODIES.find((b) => b.id === 'moon')!,
-    [focusedBodyId],
+      solarBodies.find((b) => b.id === focusedBodyId) ??
+      solarBodies.find((b) => b.id === 'moon')!,
+    [focusedBodyId, solarBodies],
   );
 
   useEffect(() => {
@@ -382,12 +385,13 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
     });
     scene.add(new THREE.Points(starGeo, starMat));
 
+    const bodiesList = getSolarSystemBodies();
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
     const mapCache = new Map<
       string,
       { albedo: THREE.CanvasTexture; bump: THREE.CanvasTexture | null }
     >();
-    for (const b of SOLAR_SYSTEM_BODIES) {
+    for (const b of bodiesList) {
       mapCache.set(b.id, buildCelestialMaps(b, maxAniso));
     }
     const saturnRingTex = createSaturnRingTexture(maxAniso);
@@ -404,7 +408,7 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
     const solarBodyGroups = new Map<string, THREE.Group>();
     const clickableMeshes: THREE.Object3D[] = [];
 
-    for (const body of SOLAR_SYSTEM_BODIES) {
+    for (const body of bodiesList) {
       const grp = new THREE.Group();
       grp.userData = { body };
 
@@ -503,7 +507,7 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
         }
 
         if (body.id === 'earth') {
-          const moonSpec = SOLAR_SYSTEM_BODIES.find((m) => m.id === 'moon');
+          const moonSpec = bodiesList.find((m) => m.id === 'moon');
           if (moonSpec) {
             const mPts: THREE.Vector3[] = [];
             for (let s = 0; s <= 64; s++) {
@@ -640,7 +644,7 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
       const h = container?.clientHeight || window.innerHeight;
       camera.updateMatrixWorld();
 
-      const next = SOLAR_SYSTEM_BODIES.map((b) => {
+      const next = bodiesList.map((b) => {
         const grp = solarBodyGroups.get(b.id);
         if (!grp) return { body: b, x: 0, y: 0, visible: false };
         _tmpVec.copy(grp.position);
@@ -722,10 +726,10 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
       }
 
       if (isSolar) {
-        for (const body of SOLAR_SYSTEM_BODIES) {
+        for (const body of bodiesList) {
           const grp = solarBodyGroups.get(body.id);
           if (!grp) continue;
-          const [bx, bz] = computeCelestialBodyXZ(body, yr, SOLAR_SYSTEM_BODIES);
+          const [bx, bz] = computeCelestialBodyXZ(body, yr, bodiesList);
           grp.position.set(bx, 0, bz);
         }
 
@@ -737,14 +741,14 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
           }
         }
 
-        for (const mission of SPACE_MISSIONS) {
+        for (const mission of getSpaceMissions()) {
           const prog = computeMissionTransferProgress(mission, yr);
           if (prog <= 0) continue;
-          const originBody = SOLAR_SYSTEM_BODIES.find((b) => b.id === mission.originBodyId);
-          const targetBody = SOLAR_SYSTEM_BODIES.find((b) => b.id === mission.targetBodyId);
+          const originBody = bodiesList.find((b) => b.id === mission.originBodyId);
+          const targetBody = bodiesList.find((b) => b.id === mission.targetBodyId);
           if (!originBody || !targetBody) continue;
-          const [ox, oz] = computeCelestialBodyXZ(originBody, mission.launchYear);
-          const [tx, tz] = computeCelestialBodyXZ(targetBody, mission.arrivalYear);
+          const [ox, oz] = computeCelestialBodyXZ(originBody, mission.launchYear, bodiesList);
+          const [tx, tz] = computeCelestialBodyXZ(targetBody, mission.arrivalYear, bodiesList);
           const curve = new THREE.QuadraticBezierCurve3(
             new THREE.Vector3(ox, 0, oz),
             new THREE.Vector3((ox + tx) * 0.5, 5.0, (oz + tz) * 0.5),
@@ -770,8 +774,8 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
         }
       } else {
         const spec =
-          SOLAR_SYSTEM_BODIES.find((b) => b.id === bodyId) ??
-          SOLAR_SYSTEM_BODIES.find((b) => b.id === 'moon')!;
+          bodiesList.find((b) => b.id === bodyId) ??
+          bodiesList.find((b) => b.id === 'moon')!;
         const maps = mapCache.get(spec.id);
         detailMat.map = maps?.albedo ?? null;
         detailMat.bumpMap = maps?.bump ?? null;
@@ -916,15 +920,15 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
   }, [cameraCommand]);
 
   const activeMissionCount = useMemo(
-    () => SPACE_MISSIONS.filter((m) => currentYear >= m.launchYear).length,
-    [currentYear],
+    () => spaceMissions.filter((m) => currentYear >= m.launchYear).length,
+    [currentYear, spaceMissions],
   );
 
   const focusedLoc = localizeCelestialBody(focusedBodySpec, language);
 
   return (
     <div
-      className="relative w-full h-full overflow-hidden bg-[#05070C]"
+      className="relative w-full h-full overflow-hidden bg-[#04060B]"
       data-testid={`deep-space-${spaceStage}`}
     >
       <div ref={mountRef} className="w-full h-full" />
@@ -955,7 +959,7 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
                     y,
                   )}px, 0) translate(-50%, -100%)`,
                 }}
-                className="absolute top-0 left-0 z-10 px-2.5 py-1 rounded-md bg-[#0B0E14]/92 border border-white/[0.1] text-xs font-medium text-slate-100 hover:border-sky-400/70 transition-colors whitespace-nowrap cursor-pointer"
+                className="absolute top-0 left-0 z-10 px-2.5 py-1 rounded atlas-chassis text-xs font-medium text-slate-100 hover:border-sky-400/70 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {bLoc.name}
               </button>
@@ -964,26 +968,28 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
 
           <aside
             aria-label={ui.solarPanelAria}
-            className="absolute top-20 left-5 z-10 w-80 rounded-xl bg-[#0B0E14]/95 border border-white/[0.08] p-4 text-slate-200 shadow-[0_16px_38px_rgba(0,0,0,0.72)]"
+            className="absolute top-15 left-4 z-10 w-80 max-w-[calc(100vw-2rem)] rounded-lg atlas-chassis atlas-reticle p-4 text-slate-200"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-white">{ui.solarPanelTitle}</h2>
+                <h2 className="text-sm font-semibold text-white tracking-tight">
+                  {ui.solarPanelTitle}
+                </h2>
                 <p className="text-[11px] text-slate-400 mt-0.5">{ui.solarPanelSubtitle}</p>
               </div>
               <button
                 type="button"
                 onClick={() => onSpaceStageChange('earth', 'earth')}
-                className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-xs font-semibold text-slate-950 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-3 py-1.5 rounded-md bg-sky-400 hover:bg-sky-300 text-xs font-semibold text-slate-950 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {ui.returnEarthBtn}
               </button>
             </div>
 
-            <div className="mt-3.5 pt-3.5 border-t border-white/[0.07]">
+            <div className="mt-3.5 pt-3 border-t border-white/[0.07]">
               <div className="text-[11px] text-slate-400 mb-2">{ui.selectBodyHint}</div>
               <div className="grid grid-cols-4 gap-1.5">
-                {SOLAR_SYSTEM_BODIES.filter((b) => b.kind !== 'star').map((b) => {
+                {solarBodies.filter((b) => b.kind !== 'star').map((b) => {
                   const bLoc = localizeCelestialBody(b, language);
                   return (
                     <button
@@ -998,7 +1004,7 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
                           onSpaceStageChange('body_detail', b.id);
                         }
                       }}
-                      className="py-1.5 px-1.5 rounded-md bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.07] hover:border-sky-400/50 text-xs font-medium text-slate-200 transition-colors truncate cursor-pointer"
+                      className="py-1.5 px-1.5 rounded-md atlas-well hover:border-sky-400/50 text-xs font-medium text-slate-200 hover:text-white transition-colors truncate cursor-pointer"
                     >
                       {bLoc.name}
                     </button>
@@ -1009,7 +1015,7 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
 
             <div className="mt-3.5 pt-3 border-t border-white/[0.07] flex items-center justify-between text-xs text-slate-400">
               <span>{ui.activeMissionsLabel}</span>
-              <span className="font-mono tabular-nums text-slate-100 font-medium">
+              <span className="font-mono tabular-nums text-sky-300 font-semibold">
                 {ui.activeMissionsUnit(activeMissionCount)}
               </span>
             </div>
@@ -1021,11 +1027,11 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
       {spaceStage === 'body_detail' && (
         <aside
           aria-label={ui.bodyInspectorAria}
-          className="absolute top-20 left-5 z-10 w-80 rounded-xl bg-[#0B0E14]/95 border border-white/[0.08] p-4 text-slate-200 shadow-[0_16px_38px_rgba(0,0,0,0.72)]"
+          className="absolute top-15 left-4 z-10 w-80 max-w-[calc(100vw-2rem)] rounded-lg atlas-chassis atlas-reticle p-4 text-slate-200"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-white truncate">
+              <h2 className="text-sm font-semibold text-white tracking-tight truncate">
                 {focusedLoc.name} · {ui.bodyInspectorSuffix}
               </h2>
               <div className="text-[11px] text-slate-400 mt-0.5 truncate">
@@ -1036,14 +1042,14 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
               <button
                 type="button"
                 onClick={() => onSpaceStageChange('solar_system', focusedBodySpec.id)}
-                className="px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs text-slate-200 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-2.5 py-1.5 rounded-md atlas-well hover:border-sky-400/45 text-xs text-slate-200 hover:text-white transition-colors whitespace-nowrap cursor-pointer"
               >
                 {ui.solarPlaneBtn}
               </button>
               <button
                 type="button"
                 onClick={() => onSpaceStageChange('earth', 'earth')}
-                className="px-2.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-xs font-semibold text-slate-950 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-2.5 py-1.5 rounded-md bg-sky-400 hover:bg-sky-300 text-xs font-semibold text-slate-950 transition-colors whitespace-nowrap cursor-pointer"
               >
                 {ui.returnEarthBtn}
               </button>
@@ -1069,3 +1075,5 @@ export const DeepSpaceStage: React.FC<DeepSpaceStageProps> = ({
     </div>
   );
 };
+
+export default DeepSpaceStage;

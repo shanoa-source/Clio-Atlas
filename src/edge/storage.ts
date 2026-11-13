@@ -8,6 +8,7 @@ import {
   isPlainObject,
   validateImportPayload,
 } from '../shared/dataValidator';
+import { getBackendDetectedDatasetSummary } from '../shared/atlasDataLayer';
 import {
   buildBundledInitialSnapshot,
   BUNDLED_ATLAS_SCHEMA,
@@ -147,9 +148,14 @@ export function createEdgeStorageAdapter(
     };
   }
 
+  async function getDetectedDatasets() {
+    return getBackendDetectedDatasetSummary();
+  }
+
   return {
     persistenceKind,
     getSnapshot,
+    getDetectedDatasets,
     commitImport,
     getSchemaCatalog,
   };

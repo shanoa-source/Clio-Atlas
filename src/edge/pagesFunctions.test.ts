@@ -18,7 +18,12 @@ import {
   resolveTerritoriesInBundle,
 } from '../../scripts/resolve-osm-ids';
 import { validateImportPayload } from '../shared/dataValidator';
-import { handleChatRequest, handleOsmBoundariesRequest } from './apiHandlers';
+import {
+  DEFAULT_GEMINI_MODEL,
+  handleChatRequest,
+  handleOsmBoundariesRequest,
+  normalizeRequestedGeminiModel,
+} from './apiHandlers';
 import { createEdgeStorageAdapter, resetEdgeIsolateMemoryStore } from './storage';
 import { EdgeEnv, KVNamespaceLike, PagesEventContext } from './types';
 
@@ -143,7 +148,7 @@ test('Cloudflare Pages Functions middleware, KV-backed data import/export, overv
   assert.equal(optionsRes.status, 204);
   assert.equal(optionsRes.headers.get('Access-Control-Allow-Origin'), '*');
 
-  // 2. GET /api/overview-config & GET /api/data/schema start empty
+  // 2. GET /api/overview-config & GET /api/data/schema start empty while exposing backend-detected datasets
   const cfgRes = await onOverviewConfigGet(
     createPagesContext(new Request('https://atlas.pages.dev/api/overview-config?lang=en'), env),
   );
@@ -151,6 +156,9 @@ test('Cloudflare Pages Functions middleware, KV-backed data import/export, overv
   const cfgJson = (await cfgRes.json()) as any;
   assert.deepEqual(cfgJson.books, []);
   assert.deepEqual(cfgJson.customEvents, []);
+  assert.deepEqual(cfgJson.detectedDatasetIds, ['classical_athens', 'roman_principate']);
+  assert.equal(cfgJson.datasetsBundle.territories.length, 20);
+  assert.equal(cfgJson.datasetsBundle.polities.length, 8);
 
   const schemaRes = await onDataSchemaGet(
     createPagesContext(new Request('https://atlas.pages.dev/api/data/schema'), env),
@@ -263,7 +271,7 @@ test('Cloudflare Pages Functions middleware, KV-backed data import/export, overv
         id: 'sp_shijing_millet',
         commonNameZh: '黍（黄米先秦农书品系）',
         scientificName: 'Panicum miliaceum',
-        classicalGreekName: '黍 / 秬黍 (Shǔ / Jùshǔ)',
+        classicalSourceName: '黍 / 秬黍 (Shǔ / Jùshǔ)',
         kingdom: 'plantae',
         discovererZh: '《氾胜之书》记述',
         discovererEn: 'Recorded in Fan Shengzhi Shu',
@@ -306,7 +314,7 @@ test('Cloudflare Pages Functions middleware, KV-backed data import/export, overv
   assert.equal(exportRes.status, 200);
   const exportJson = (await exportRes.json()) as any;
   assert.equal(exportJson.speciesDiscoveries.length, 1);
-  assert.equal(exportJson.speciesDiscoveries[0].classicalGreekName, '黍 / 秬黍 (Shǔ / Jùshǔ)');
+  assert.equal(exportJson.speciesDiscoveries[0].classicalSourceName, '黍 / 秬黍 (Shǔ / Jùshǔ)');
 
   const previewRes = await onOverviewPreviewPost(
     createPagesContext(
@@ -351,8 +359,21 @@ test('Cloudflare Pages Functions middleware, KV-backed data import/export, overv
   );
   assert.equal(missingKeyChatRes.status, 503);
 
+  assert.equal(DEFAULT_GEMINI_MODEL, 'gemini-4-hydrogen');
+  assert.deepEqual(normalizeRequestedGeminiModel(undefined), {
+    ok: true,
+    model: 'gemini-4-hydrogen',
+  });
+  assert.deepEqual(normalizeRequestedGeminiModel('Gemini 4 Argon'), {
+    ok: true,
+    model: 'gemini-4-argon',
+  });
+  assert.equal(normalizeRequestedGeminiModel('gemini-1.5-pro').ok, false);
+
   let capturedSystemInstruction = '';
   let capturedPromptText = '';
+  let capturedModel = '';
+  let capturedChannelMode = '';
   const storage = createEdgeStorageAdapter(env);
   const okChatRes = await handleChatRequest(
     new Request('https://atlas.pages.dev/api/chat', {
@@ -376,7 +397,9 @@ test('Cloudflare Pages Functions middleware, KV-backed data import/export, overv
     { ...env, GEMINI_API_KEY: 'test-edge-key' },
     storage,
     {
-      generateReplyFn: async ({ systemInstruction, contents }) => {
+      generateReplyFn: async ({ model, channelMode, systemInstruction, contents }) => {
+        capturedModel = model;
+        capturedChannelMode = channelMode;
         capturedSystemInstruction = systemInstruction;
         capturedPromptText = contents[contents.length - 1].parts[0].text;
         return 'In 2 CE, Chang’an reached ~380 pers./km² coupled with 91% palace/market oil-lamp radiance.';
@@ -386,8 +409,75 @@ test('Cloudflare Pages Functions middleware, KV-backed data import/export, overv
   assert.equal(okChatRes.status, 200);
   const okChatJson = (await okChatRes.json()) as any;
   assert.equal(okChatJson.contextMode, 'region');
+  assert.equal(okChatJson.modelUsed, 'gemini-4-hydrogen');
+  assert.equal(okChatJson.channelMode, 'default');
+  assert.equal(capturedModel, 'gemini-4-hydrogen');
+  assert.equal(capturedChannelMode, 'default');
   assert.match(capturedSystemInstruction, /\[KV Prompt\]/);
   assert.match(capturedPromptText, /Population Density × Nighttime Lights/);
+
+  // 6b. POST /api/chat supports frontend custom API & Gemini model channel even without server GEMINI_API_KEY
+  let customCapturedApiKey = '';
+  let customCapturedBaseUrl: string | undefined;
+  let customCapturedModel = '';
+  const customChatRes = await handleChatRequest(
+    new Request('https://atlas.pages.dev/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: 'zh',
+        message: '概述罗马元首制海运粮道。',
+        aiConfig: {
+          mode: 'custom',
+          apiKey: 'user-own-gemini-key',
+          baseUrl: 'https://custom-gateway.example.com',
+          model: 'gemini-4-argon',
+        },
+        mapState: {
+          currentYear: 117,
+          activeLayers: ['transport_routes'],
+        },
+      }),
+    }),
+    env, // No server GEMINI_API_KEY needed when custom channel is supplied
+    storage,
+    {
+      generateReplyFn: async ({ apiKey, baseUrl, model }) => {
+        customCapturedApiKey = apiKey;
+        customCapturedBaseUrl = baseUrl;
+        customCapturedModel = model;
+        return '公元 117 年亚历山大港—波尔图斯海运干线支撑罗马百万人口。';
+      },
+    },
+  );
+  assert.equal(customChatRes.status, 200);
+  const customChatJson = (await customChatRes.json()) as any;
+  assert.equal(customChatJson.channelMode, 'custom');
+  assert.equal(customChatJson.modelUsed, 'gemini-4-argon');
+  assert.equal(customCapturedApiKey, 'user-own-gemini-key');
+  assert.equal(customCapturedBaseUrl, 'https://custom-gateway.example.com');
+  assert.equal(customCapturedModel, 'gemini-4-argon');
+
+  // Rejects deprecated models on custom channel with 400
+  const deprecatedModelRes = await handleChatRequest(
+    new Request('https://atlas.pages.dev/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: 'en',
+        message: 'Test deprecated model rejection',
+        aiConfig: {
+          mode: 'custom',
+          apiKey: 'user-own-gemini-key',
+          model: 'gemini-1.5-pro',
+        },
+        mapState: { currentYear: 117, activeLayers: [] },
+      }),
+    }),
+    env,
+    storage,
+  );
+  assert.equal(deprecatedModelRes.status, 400);
 
   // 7. GET /api/osm-boundaries caches geometries into `OSM_CACHE_KV` and sets Edge CDN Cache-Control
   const osmFetchRes = await handleOsmBoundariesRequest(
@@ -553,17 +643,52 @@ test('OSM post-processing script resolves modernAdminNameEn + approxBBox via Nom
   assert.equal(report.items[1].source, 'overpass');
 });
 
-test('Pre-Linnaean (< 1735) species validation enforces earliest textual chroniclers, canonical event/text years, and global classicalGreekName', () => {
-  // 1. Valid global pre-Linnaean records (Greece, Mesoamerica) + post-1735 Linnaean record
+test('Pre-Linnaean (< 1735) species validation enforces classicalSourceName, rejects legacy classicalGreekName, and validates extensible polity flags', () => {
+  // 1. Valid global pre-Linnaean records (Greece, Mesoamerica) + extensible polity flagSvg / flagAsset
   const validSpeciesRes = validateImportPayload(
     {
       schemaVersion: '1.0.0',
+      polities: [
+        {
+          id: 'pol_svg_flag',
+          nameZh: '自定义矢量旗政权',
+          nameEn: 'Custom SVG Flag Polity',
+          eraSubtitle: 'SPQR Banner',
+          startYear: -27,
+          endYear: 180,
+          representativeColor: '#991B1B',
+          borderColor: '#F87171',
+          flagSvg:
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 40"><rect width="60" height="40" fill="#7F1D1D"/></svg>',
+          flagLabel: 'SPQR',
+          capitalName: 'Roma',
+          capitalCoords: [12.4964, 41.9028],
+          historicalSummary: 'Principate Rome with inline SVG vexillum.',
+          sourceCitation: 'Tacitus',
+        },
+        {
+          id: 'pol_asset_flag',
+          nameZh: '外部图像旗帜政权',
+          nameEn: 'Asset Flag Polity',
+          eraSubtitle: 'Asset Banner',
+          startYear: 1,
+          endYear: 100,
+          representativeColor: '#1D4ED8',
+          borderColor: '#60A5FA',
+          flagAsset: 'https://example.com/flags/banner.svg',
+          flagLabel: 'ASSET',
+          capitalName: 'Alexandria',
+          capitalCoords: [29.9187, 31.2001],
+          historicalSummary: 'Polity using external flagAsset URL.',
+          sourceCitation: 'Strabo',
+        },
+      ],
       speciesDiscoveries: [
         {
           id: 'sp_acropolis_olive_480bce',
           commonNameZh: '雅典卫城圣橄榄',
           scientificName: 'Olea europaea',
-          classicalGreekName: 'ἐλαία (elaia)',
+          classicalSourceName: 'ἐλαία (elaia)',
           kingdom: 'plantae',
           discovererZh: '希罗多德《历史》见证记述',
           discovererEn: 'Recorded by Herodotus (Histories 8.55)',
@@ -577,7 +702,7 @@ test('Pre-Linnaean (< 1735) species validation enforces earliest textual chronic
           id: 'sp_mesoamerica_cacao_1577',
           commonNameZh: '中美洲可可树',
           scientificName: 'Theobroma cacao',
-          classicalGreekName: 'cacahuatl (Classical Nahuatl)',
+          classicalSourceName: 'cacahuatl (Classical Nahuatl)',
           kingdom: 'plantae',
           discovererZh: '贝尔纳迪诺·德·萨阿贡《佛罗伦萨手抄本》记述',
           discovererEn: 'Recorded by Bernardino de Sahagún (Florentine Codex)',
@@ -592,18 +717,37 @@ test('Pre-Linnaean (< 1735) species validation enforces earliest textual chronic
     'bundle',
   );
   assert.equal(validSpeciesRes.valid, true);
+  assert.equal(validSpeciesRes.counts.polities, 2);
   assert.equal(validSpeciesRes.counts.speciesDiscoveries, 2);
 
-  // 2. Rejects fabricated ancient bureaus, "Unknown"/"未知", Year 0, and anachronistic Linnaeus (< 1707)
+  // 2. Rejects XSS flagSvg, missing flag source, legacy classicalGreekName, fabricated bureaus, "Unknown"/"未知", Year 0, and anachronistic Linnaeus (< 1707)
   const badSpeciesRes = validateImportPayload(
     {
       schemaVersion: '1.0.0',
+      polities: [
+        {
+          id: 'pol_xss_flag',
+          nameZh: '恶意脚本旗帜',
+          nameEn: 'XSS Flag',
+          eraSubtitle: '',
+          startYear: 1,
+          endYear: 50,
+          representativeColor: '#991B1B',
+          borderColor: '#F87171',
+          flagSvg: '<svg onload="alert(1)"><script>evil()</script></svg>',
+          flagLabel: 'XSS',
+          capitalName: 'Roma',
+          capitalCoords: [12.5, 41.9],
+          historicalSummary: '',
+          sourceCitation: '',
+        },
+      ],
       speciesDiscoveries: [
         {
           id: 'sp_fake_bureau',
           commonNameZh: '虚构官署测试',
           scientificName: 'Olea europaea',
-          classicalGreekName: 'ἐλαία',
+          classicalGreekName: 'ἐλαία', // Legacy field name must be rejected
           kingdom: 'plantae',
           discovererZh: '雅典农政官署编目',
           discovererEn: 'Imperial Botanical Bureau',
@@ -617,7 +761,7 @@ test('Pre-Linnaean (< 1735) species validation enforces earliest textual chronic
           id: 'sp_anachronistic_linnaeus',
           commonNameZh: '时代错置林奈测试',
           scientificName: 'Laurus nobilis',
-          classicalGreekName: 'δάφνη',
+          classicalSourceName: 'δάφνη',
           kingdom: 'plantae',
           discovererZh: '未知',
           discovererEn: 'Carl Linnaeus',
@@ -633,9 +777,121 @@ test('Pre-Linnaean (< 1735) species validation enforces earliest textual chronic
   );
   assert.equal(badSpeciesRes.valid, false);
   const paths = badSpeciesRes.errors.map((e) => e.path);
+  assert.ok(paths.includes('polities[0].flagSvg'), 'must reject XSS inline SVG flag');
+  assert.ok(
+    paths.includes('speciesDiscoveries[0].classicalSourceName'),
+    'must reject legacy classicalGreekName when classicalSourceName is missing',
+  );
   assert.ok(paths.includes('speciesDiscoveries[0].discovererZh'));
   assert.ok(paths.includes('speciesDiscoveries[0].discovererEn'));
   assert.ok(paths.includes('speciesDiscoveries[1].discoveryYear'));
   assert.ok(paths.includes('speciesDiscoveries[1].discovererZh'));
   assert.ok(paths.includes('speciesDiscoveries[1].discovererEn'));
 });
+
+test('OSM Edge KV composite batch fast-path resolves multi-ID requests in 1 single KV read on cold Workers isolates while preserving osm:v1:* keys', async () => {
+  const { clearEdgeOsmIsolateCache, resolveOsmBoundariesOnEdge } = await import(
+    './osmEdgeService'
+  );
+  clearEdgeOsmIsolateCache();
+
+  let kvGetCalls = 0;
+  const rawStore = new Map<string, string>();
+  const instrumentedKv: KVNamespaceLike = {
+    async get(key: string, type?: 'text' | 'json'): Promise<any> {
+      kvGetCalls++;
+      const val = rawStore.get(key) ?? null;
+      if (val === null) return null;
+      return type === 'json' ? JSON.parse(val) : val;
+    },
+    async put(key: string, value: string): Promise<void> {
+      rawStore.set(key, value);
+    },
+    async delete(key: string): Promise<void> {
+      rawStore.delete(key);
+    },
+  };
+
+  let upstreamFetchCalls = 0;
+  const mockFetch: typeof fetch = async () => {
+    upstreamFetchCalls++;
+    return new Response(
+      JSON.stringify({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { osm_type: 'relation', osm_id: 991001 },
+            geometry: {
+              type: 'Polygon',
+              coordinates: [
+                [
+                  [23.6, 37.9],
+                  [23.8, 37.9],
+                  [23.8, 38.0],
+                  [23.6, 38.0],
+                  [23.6, 37.9],
+                ],
+              ],
+            },
+          },
+          {
+            type: 'Feature',
+            properties: { osm_type: 'relation', osm_id: 991002 },
+            geometry: {
+              type: 'Polygon',
+              coordinates: [
+                [
+                  [23.8, 37.9],
+                  [24.0, 37.9],
+                  [24.0, 38.0],
+                  [23.8, 38.0],
+                  [23.8, 37.9],
+                ],
+              ],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  };
+
+  // Warm run: populates both osm:v1:R991001, osm:v1:R991002 AND composite osm:batch:v1:*
+  const warmResult = await resolveOsmBoundariesOnEdge(
+    ['R991001', 'R991002'],
+    { OSM_CACHE_KV: instrumentedKv },
+    { fetchImpl: mockFetch, chunkDelayMs: 0 },
+  );
+  assert.equal(Object.keys(warmResult).length, 2);
+  assert.equal(upstreamFetchCalls, 1);
+  assert.equal(rawStore.has('osm:v1:R991001'), true);
+  assert.equal(rawStore.has('osm:v1:R991002'), true);
+  assert.equal(
+    Array.from(rawStore.keys()).some((k) => k.startsWith('osm:batch:v1:2:')),
+    true,
+    'Composite batch KV key must be written',
+  );
+
+  // Cold isolate simulation: clear L1 isolate memory, reset KV counter, request in reversed order
+  clearEdgeOsmIsolateCache();
+  kvGetCalls = 0;
+
+  const coldIsolateResult = await resolveOsmBoundariesOnEdge(
+    ['R991002', 'R991001'],
+    { OSM_CACHE_KV: instrumentedKv },
+    {
+      fetchImpl: async () => {
+        throw new Error('Upstream Nominatim should never be called on KV batch hit');
+      },
+      chunkDelayMs: 0,
+    },
+  );
+  assert.equal(Object.keys(coldIsolateResult).length, 2);
+  assert.equal(
+    kvGetCalls,
+    1,
+    `Cold Workers isolate should hydrate entire parcel batch in 1 single KV read, got ${kvGetCalls}`,
+  );
+});
+
