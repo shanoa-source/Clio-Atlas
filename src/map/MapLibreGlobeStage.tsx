@@ -22,7 +22,7 @@ import {
   localizeSpecies,
   UI_TEXT,
 } from '../i18n/translations';
-import { getMortalityCatastrophes } from '../shared/atlasDataLayer';
+import { getMortalityCatastrophes, getPolityPhases } from '../shared/atlasDataLayer';
 import {
   clamp,
   computeMortalityEventEnvelope,
@@ -46,17 +46,19 @@ import {
   computeNightLightThermalPoints,
   computePopulationThermalPoints,
 } from '../utils/pixelLayers';
-import { useOsmResolvedTerritories } from '../services/osmBoundaryService';
+import {
+  getAllResolvedOsmTerritories,
+  useOsmResolvedTerritories,
+} from '../services/osmBoundaryService';
 import {
   hitTestUnboundedPolityAtLngLat,
   isUnboundedPolity,
-  UnboundedPolityFieldResult,
 } from '../utils/unboundedPolityField';
 import {
+  buildStaticGeopoliticalCatalog,
   buildZoomAdaptiveBorderPaintSpecs,
-  DemarcatedSlotItem,
-  GeopoliticalTransitionController,
-  GeopoliticalTransitionFrame,
+  GeopoliticalGpuAnimator,
+  GeopoliticalGpuFrame,
 } from '../utils/polityTransitionEngine';
 import {
   buildGlobeSkySpec,
@@ -246,6 +248,8 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     onInitialParcelsReady,
   };
 
+  const lastHandledCameraCmdIdRef = useRef<number | null>(null);
+
   const syncApiRef = useRef<{
     syncDataLayers: () => void;
     syncProjectedOverlays: () => void;
@@ -274,14 +278,10 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     let prevSyncedYear: number | null = null;
     const lastPaintCache = new Map<string, number | string>();
     let lastThemeNight: boolean | null = null;
-    const geoTransition = new GeopoliticalTransitionController();
+    const geoGpuAnimator = new GeopoliticalGpuAnimator();
+    let lastUploadedCatalogSig = '__uninit__';
+    const lastSentFeatureState = new Map<string, string>();
     let hasRenderedInitialGeo = false;
-    let lastSteadyDemarcatedSig = '__init__';
-    let lastEnteringDemarcatedSig = '__init__';
-    let lastExitingDemarcatedSig = '__init__';
-    let lastSteadyUnboundedSig = '__init__';
-    let lastEnteringUnboundedSig = '__init__';
-    let lastExitingUnboundedSig = '__init__';
     let lastSelectedRegionSig = '__init__';
     let lastFlagOverlaySig = '';
     let lastHoverCoordSig = '';
@@ -501,21 +501,33 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       map.setLayoutProperty(layerId, 'visibility', v);
     }
 
-    function setScaledFillOpacityIfChanged(layerId: string, scaleFactor: number) {
-      if (!map.getLayer(layerId)) return;
-      const clamped = +clamp(scaleFactor, 0, 1).toFixed(3);
-      const vis = clamped > 0.004;
-      setVisIfChanged(layerId, vis);
-      if (!vis) return;
-      const cacheKey = `fo:${layerId}`;
-      if (lastPaintCache.get(cacheKey) === clamped) return;
-      lastPaintCache.set(cacheKey, clamped);
-      const expr: any =
-        clamped >= 0.999 ? ['get', 'fillOpacity'] : ['*', ['get', 'fillOpacity'], clamped];
-      map.setPaintProperty(layerId, 'fill-opacity', expr);
+    function ensureStaticGeopoliticalCatalogUploaded(): boolean {
+      const pSrc = map.getSource('polity-source') as maplibregl.GeoJSONSource | undefined;
+      const bSrc = map.getSource('polity-boundary-source') as maplibregl.GeoJSONSource | undefined;
+      const gSrc = map.getSource('unbounded-glaze-source') as maplibregl.GeoJSONSource | undefined;
+      const fSrc = map.getSource('unbounded-field-source') as maplibregl.GeoJSONSource | undefined;
+      if (!pSrc || !bSrc || !gSrc || !fSrc) return false;
+
+      const catalog = buildStaticGeopoliticalCatalog(
+        getPolityPhases(),
+        getAllResolvedOsmTerritories(),
+      );
+      if (catalog.catalogSig === lastUploadedCatalogSig) {
+        return false;
+      }
+
+      lastUploadedCatalogSig = catalog.catalogSig;
+      lastSentFeatureState.clear();
+      geoGpuAnimator.bindCatalog(catalog);
+
+      pSrc.setData(catalog.demarcatedFillFC as any);
+      bSrc.setData(catalog.demarcatedBoundaryFC as any);
+      gSrc.setData(catalog.unboundedGlazeFC as any);
+      fSrc.setData(catalog.unboundedFieldFC as any);
+      return true;
     }
 
-    function applyGeopoliticalPaint(frame: GeopoliticalTransitionFrame) {
+    function applyGeopoliticalFeatureStates(frame: GeopoliticalGpuFrame) {
       if (!layersReadyRef.current || cancelled) return;
 
       const thermalBlend = Math.max(layerFadeCurrent.pop, layerFadeCurrent.mort);
@@ -528,203 +540,64 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       const baseCasingOp = 0.9 - surfaceBorderBlend * 0.46;
       const baseRibbonOp = 0.28 - surfaceBorderBlend * 0.18;
 
-      const applyDemarcatedSlotPaint = (
-        suffix: '' | '-entering' | '-exiting',
-        hasItems: boolean,
-        factor: number,
-      ) => {
-        const fillId = `polity-fill${suffix}`;
-        const strokeId = `polity-stroke${suffix}`;
-        const casingId = `polity-casing${suffix}`;
-        const ribbonId = `polity-inner-ribbon${suffix}`;
+      let anyUpdated = false;
 
-        const effFactor = hasItems ? factor : 0;
-        setScaledFillOpacityIfChanged(fillId, effFactor * demarcatedThemeScale);
-
-        const sOp = +(baseStrokeOp * effFactor).toFixed(3);
-        const cOp = +(baseCasingOp * effFactor).toFixed(3);
-        const rOp = +(baseRibbonOp * effFactor).toFixed(3);
-
-        setVisIfChanged(strokeId, sOp > 0.004);
-        setVisIfChanged(casingId, cOp > 0.004);
-        setVisIfChanged(ribbonId, rOp > 0.004);
-
-        if (sOp > 0.004) setPaintIfChanged(strokeId, 'line-opacity', sOp);
-        if (cOp > 0.004) setPaintIfChanged(casingId, 'line-opacity', cOp);
-        if (rOp > 0.004) setPaintIfChanged(ribbonId, 'line-opacity', rOp);
-      };
-
-      applyDemarcatedSlotPaint('', frame.steadyDemarcated.length > 0, 1);
-      applyDemarcatedSlotPaint(
-        '-entering',
-        frame.enteringDemarcated.length > 0,
-        frame.enteringFactor,
-      );
-      applyDemarcatedSlotPaint('-exiting', frame.exitingDemarcated.length > 0, frame.exitingFactor);
-
-      const applyUnboundedSlotPaint = (
-        suffix: '' | '-entering' | '-exiting',
-        cohort: GeopoliticalTransitionFrame['steadyUnbounded'],
-        factor: number,
-      ) => {
-        const hasGlaze = Boolean(cohort && cohort.field.glazeParcels.length > 0);
-        const hasShells = Boolean(cohort && cohort.field.shells.length > 0);
-        const uScale = factor * unboundedThemeScale;
-        setScaledFillOpacityIfChanged(`unbounded-influence-glaze${suffix}`, hasGlaze ? uScale : 0);
-        setScaledFillOpacityIfChanged(`unbounded-core-glaze${suffix}`, hasGlaze ? uScale : 0);
-        setScaledFillOpacityIfChanged(`unbounded-sphere-fill${suffix}`, hasShells ? uScale : 0);
-      };
-
-      applyUnboundedSlotPaint('', frame.steadyUnbounded, 1);
-      applyUnboundedSlotPaint('-entering', frame.enteringUnbounded, frame.enteringFactor);
-      applyUnboundedSlotPaint('-exiting', frame.exitingUnbounded, frame.exitingFactor);
-    }
-
-    function uploadDemarcatedSlot(
-      polySourceName: string,
-      boundarySourceName: string,
-      items: DemarcatedSlotItem[],
-    ) {
-      const pSrc = map.getSource(polySourceName) as maplibregl.GeoJSONSource | undefined;
-      const bSrc = map.getSource(boundarySourceName) as maplibregl.GeoJSONSource | undefined;
-      if (!pSrc || !bSrc) return;
-
-      if (items.length === 0) {
-        pSrc.setData(EMPTY_FC);
-        bSrc.setData(EMPTY_FC);
-        return;
+      for (let i = 0; i < frame.fills.length; i++) {
+        const f = frame.fills[i];
+        const fillOpacity = +(f.alpha * demarcatedThemeScale).toFixed(3);
+        const stateSig = `${fillOpacity}:${f.fillColor}`;
+        const cacheKey = `pf:${f.fid}`;
+        if (lastSentFeatureState.get(cacheKey) !== stateSig) {
+          lastSentFeatureState.set(cacheKey, stateSig);
+          map.setFeatureState(
+            { source: 'polity-source', id: f.fid },
+            { fillOpacity, fillColor: f.fillColor },
+          );
+          anyUpdated = true;
+        }
       }
 
-      pSrc.setData({
-        type: 'FeatureCollection',
-        features: items.map((t) => ({
-          type: 'Feature',
-          properties: {
-            id: t.id,
-            polityId: t.polityId,
-            nameZh: t.nameZh,
-            tier: t.tier,
-            fillColor: t.fillColor,
-            borderColor: t.borderColor,
-            fillOpacity: t.baseFillOpacity,
-          },
-          geometry: t.geometry as any,
-        })),
-      });
-
-      bSrc.setData({
-        type: 'FeatureCollection',
-        features: items.map((t) => ({
-          type: 'Feature',
-          properties: {
-            id: t.id,
-            polityId: t.polityId,
-            nameZh: t.nameZh,
-            isCore: t.isCore,
-            fillColor: t.fillColor,
-            borderColor: t.borderColor,
-          },
-          geometry: t.outerBoundary as any,
-        })),
-      });
-    }
-
-    function uploadUnboundedSlot(
-      glazeSourceName: string,
-      fieldSourceName: string,
-      field: UnboundedPolityFieldResult | null,
-    ) {
-      const gSrc = map.getSource(glazeSourceName) as maplibregl.GeoJSONSource | undefined;
-      const fSrc = map.getSource(fieldSourceName) as maplibregl.GeoJSONSource | undefined;
-      if (!gSrc || !fSrc) return;
-
-      if (!field || (field.glazeParcels.length === 0 && field.shells.length === 0)) {
-        gSrc.setData(EMPTY_FC);
-        fSrc.setData(EMPTY_FC);
-        return;
+      for (let i = 0; i < frame.boundaries.length; i++) {
+        const b = frame.boundaries[i];
+        const strokeOpacity = +(baseStrokeOp * b.alpha).toFixed(3);
+        const casingOpacity = +(baseCasingOp * b.alpha).toFixed(3);
+        const ribbonOpacity = +(baseRibbonOp * b.alpha).toFixed(3);
+        const stateSig = `${strokeOpacity}:${casingOpacity}:${ribbonOpacity}:${b.borderColor}`;
+        const cacheKey = `pb:${b.fid}`;
+        if (lastSentFeatureState.get(cacheKey) !== stateSig) {
+          lastSentFeatureState.set(cacheKey, stateSig);
+          map.setFeatureState(
+            { source: 'polity-boundary-source', id: b.fid },
+            {
+              strokeOpacity,
+              casingOpacity,
+              ribbonOpacity,
+              borderColor: b.borderColor,
+            },
+          );
+          anyUpdated = true;
+        }
       }
 
-      gSrc.setData({
-        type: 'FeatureCollection',
-        features: field.glazeParcels.map((g) => ({
-          type: 'Feature',
-          properties: {
-            id: g.id,
-            polityId: g.polityId,
-            nameZh: g.nameZh,
-            tier: g.tier,
-            isCoreZone: g.isCoreZone,
-            fillColor: g.fillColor,
-            fillOpacity: g.fillOpacity,
-          },
-          geometry: g.geometry as any,
-        })),
-      });
-
-      fSrc.setData({
-        type: 'FeatureCollection',
-        features: field.shells.map((sh) => ({
-          type: 'Feature',
-          properties: {
-            id: sh.id,
-            polityId: sh.polityId,
-            tier: sh.tier,
-            color: sh.color,
-            fillOpacity: sh.fillOpacity,
-          },
-          geometry: {
-            type: 'Polygon',
-            coordinates: [sh.ring],
-          },
-        })),
-      });
-    }
-
-    function syncGeopoliticalSourcesIfDirty(frame: GeopoliticalTransitionFrame) {
-      if (frame.steadyDemarcatedSig !== lastSteadyDemarcatedSig) {
-        lastSteadyDemarcatedSig = frame.steadyDemarcatedSig;
-        uploadDemarcatedSlot('polity-source', 'polity-boundary-source', frame.steadyDemarcated);
-      }
-      if (frame.enteringDemarcatedSig !== lastEnteringDemarcatedSig) {
-        lastEnteringDemarcatedSig = frame.enteringDemarcatedSig;
-        uploadDemarcatedSlot(
-          'polity-entering-source',
-          'polity-boundary-entering-source',
-          frame.enteringDemarcated,
-        );
-      }
-      if (frame.exitingDemarcatedSig !== lastExitingDemarcatedSig) {
-        lastExitingDemarcatedSig = frame.exitingDemarcatedSig;
-        uploadDemarcatedSlot(
-          'polity-exiting-source',
-          'polity-boundary-exiting-source',
-          frame.exitingDemarcated,
-        );
+      for (let i = 0; i < frame.unboundedCohorts.length; i++) {
+        const c = frame.unboundedCohorts[i];
+        const alpha = +(c.alpha * unboundedThemeScale).toFixed(3);
+        const stateSig = `${alpha}`;
+        const cacheKey = `uc:${c.cohortKey}`;
+        if (lastSentFeatureState.get(cacheKey) !== stateSig) {
+          lastSentFeatureState.set(cacheKey, stateSig);
+          for (let j = 0; j < c.glazeFids.length; j++) {
+            map.setFeatureState({ source: 'unbounded-glaze-source', id: c.glazeFids[j] }, { alpha });
+          }
+          for (let j = 0; j < c.fieldFids.length; j++) {
+            map.setFeatureState({ source: 'unbounded-field-source', id: c.fieldFids[j] }, { alpha });
+          }
+          anyUpdated = true;
+        }
       }
 
-      if (frame.steadyUnboundedSig !== lastSteadyUnboundedSig) {
-        lastSteadyUnboundedSig = frame.steadyUnboundedSig;
-        uploadUnboundedSlot(
-          'unbounded-glaze-source',
-          'unbounded-field-source',
-          frame.steadyUnbounded?.field ?? null,
-        );
-      }
-      if (frame.enteringUnboundedSig !== lastEnteringUnboundedSig) {
-        lastEnteringUnboundedSig = frame.enteringUnboundedSig;
-        uploadUnboundedSlot(
-          'unbounded-glaze-entering-source',
-          'unbounded-field-entering-source',
-          frame.enteringUnbounded?.field ?? null,
-        );
-      }
-      if (frame.exitingUnboundedSig !== lastExitingUnboundedSig) {
-        lastExitingUnboundedSig = frame.exitingUnboundedSig;
-        uploadUnboundedSlot(
-          'unbounded-glaze-exiting-source',
-          'unbounded-field-exiting-source',
-          frame.exitingUnbounded?.field ?? null,
-        );
+      if (anyUpdated) {
+        map.triggerRepaint();
       }
     }
 
@@ -735,9 +608,8 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       const stepGeoFade = (nowMs: number) => {
         geoFadeRaf = 0;
         if (cancelled || !layersReadyRef.current) return;
-        const frame = geoTransition.sampleFrame(nowMs);
-        syncGeopoliticalSourcesIfDirty(frame);
-        applyGeopoliticalPaint(frame);
+        const frame = geoGpuAnimator.sampleFrame(nowMs);
+        applyGeopoliticalFeatureStates(frame);
         if (frame.isAnimating) {
           geoFadeRaf = requestAnimationFrame(stepGeoFade);
         }
@@ -796,8 +668,8 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         setPaintIfChanged('species-points-layer', 'circle-stroke-opacity', spAlpha);
       }
 
-      // Smoothly modulate geopolitical fills & borders across all steady/entering/exiting slots
-      applyGeopoliticalPaint(geoTransition.sampleFrame(performance.now()));
+      // Smoothly modulate geopolitical fills & borders via synchronous GPU feature-state
+      applyGeopoliticalFeatureStates(geoGpuAnimator.sampleFrame(performance.now()));
     }
 
     function cleanupZeroedSources() {
@@ -956,8 +828,8 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         }
       }
 
-      // 1. Geopolitical Rendering (210ms GPU cross-fade across Steady / Entering / Exiting slots):
-      //    - Demarcated states (`boundaryMode !== 'unbounded'`): Sovereign Choropleth + Zoom-Adaptive Outer Borders
+      // 1. Geopolitical Rendering (Zero-Flicker Static GPU Catalog + 210ms Synchronous `setFeatureState` Tween):
+      //    - Demarcated states (`boundaryMode !== 'unbounded'`): Sovereign Choropleth + Zoom-Adaptive Inland Borders
       //    - Unbounded ancient civilizations (`boundaryMode === 'unbounded'`): Core Zone + Wider Influence Zone
       //      + Smooth Gradient Falloff to Terra Nullius, strictly clipped beneath CARTO `water`.
       const politySrc = map.getSource('polity-source') as maplibregl.GeoJSONSource | undefined;
@@ -979,14 +851,14 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
 
       if (politySrc && polityBoundarySrc && unboundedGlazeSrc && unboundedFieldSrc) {
         if (!isBootWarmup) {
-          const isImmediate = !hasRenderedInitialGeo;
+          const catalogRebuilt = ensureStaticGeopoliticalCatalogUploaded();
+          const isImmediate = !hasRenderedInitialGeo || catalogRebuilt;
           hasRenderedInitialGeo = true;
-          const { changed, frame } = geoTransition.syncTarget(polList, territories, fadeNow, {
+          const { changed, frame } = geoGpuAnimator.syncTarget(polList, territories, fadeNow, {
             immediate: isImmediate,
           });
-          if (changed) {
-            syncGeopoliticalSourcesIfDirty(frame);
-            applyGeopoliticalPaint(frame);
+          if (changed || catalogRebuilt) {
+            applyGeopoliticalFeatureStates(frame);
             if (frame.isAnimating) {
               scheduleGeopoliticalFade();
             }
@@ -1337,14 +1209,9 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       geoFadeRaf = 0;
       lastPaintCache.clear();
       lastThemeNight = null;
-      geoTransition.reset();
+      lastUploadedCatalogSig = '__uninit__';
+      lastSentFeatureState.clear();
       hasRenderedInitialGeo = false;
-      lastSteadyDemarcatedSig = '__init__';
-      lastEnteringDemarcatedSig = '__init__';
-      lastExitingDemarcatedSig = '__init__';
-      lastSteadyUnboundedSig = '__init__';
-      lastEnteringUnboundedSig = '__init__';
-      lastExitingUnboundedSig = '__init__';
       lastSelectedRegionSig = '__init__';
       mortalityEnvInitialized = false;
 
@@ -1363,19 +1230,11 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         });
       }
 
-      const precisionSources: Array<{ name: string; tolerance: number }> = [
-        { name: 'polity-source', tolerance: 0.035 },
-        { name: 'polity-entering-source', tolerance: 0.035 },
-        { name: 'polity-exiting-source', tolerance: 0.035 },
-        { name: 'polity-boundary-source', tolerance: 0.035 },
-        { name: 'polity-boundary-entering-source', tolerance: 0.035 },
-        { name: 'polity-boundary-exiting-source', tolerance: 0.035 },
-        { name: 'unbounded-glaze-source', tolerance: 0.05 },
-        { name: 'unbounded-glaze-entering-source', tolerance: 0.05 },
-        { name: 'unbounded-glaze-exiting-source', tolerance: 0.05 },
-        { name: 'unbounded-field-source', tolerance: 0.04 },
-        { name: 'unbounded-field-entering-source', tolerance: 0.04 },
-        { name: 'unbounded-field-exiting-source', tolerance: 0.04 },
+      const precisionSources: Array<{ name: string; tolerance: number; promoteId?: string }> = [
+        { name: 'polity-source', tolerance: 0.035, promoteId: 'fid' },
+        { name: 'polity-boundary-source', tolerance: 0.035, promoteId: 'fid' },
+        { name: 'unbounded-glaze-source', tolerance: 0.05, promoteId: 'fid' },
+        { name: 'unbounded-field-source', tolerance: 0.04, promoteId: 'fid' },
         { name: 'pop-thermal-source', tolerance: 0.15 },
         { name: 'night-thermal-source', tolerance: 0.15 },
         { name: 'night-lights-source', tolerance: 0.35 },
@@ -1385,13 +1244,14 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         { name: 'species-points-source', tolerance: 0.25 },
         { name: 'selected-region-source', tolerance: 0.035 },
       ];
-      for (const { name, tolerance } of precisionSources) {
+      for (const { name, tolerance, promoteId } of precisionSources) {
         if (!map.getSource(name)) {
           map.addSource(name, {
             type: 'geojson',
             data: EMPTY_FC,
             maxzoom: 12,
             tolerance,
+            ...(promoteId ? { promoteId } : {}),
           });
         }
       }
@@ -1404,113 +1264,84 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       const waterLayerId = currentLayers.find((l) => l.id === 'water')?.id;
       const beforeWaterOrSymbol = waterLayerId || firstSymbolId;
 
-      // 0A–0C. Draped Unbounded Ancient Civilization Sphere-of-Influence Stack (Exiting -> Steady -> Entering)
-      const unboundedSlots: Array<{
-        suffix: '' | '-entering' | '-exiting';
-        glazeSrc: string;
-        fieldSrc: string;
-      }> = [
-        {
-          suffix: '-exiting',
-          glazeSrc: 'unbounded-glaze-exiting-source',
-          fieldSrc: 'unbounded-field-exiting-source',
-        },
-        {
-          suffix: '',
-          glazeSrc: 'unbounded-glaze-source',
-          fieldSrc: 'unbounded-field-source',
-        },
-        {
-          suffix: '-entering',
-          glazeSrc: 'unbounded-glaze-entering-source',
-          fieldSrc: 'unbounded-field-entering-source',
-        },
-      ];
-
-      for (const slot of unboundedSlots) {
-        const infId = `unbounded-influence-glaze${slot.suffix}`;
-        if (!map.getLayer(infId)) {
-          map.addLayer(
-            {
-              id: infId,
-              type: 'fill',
-              source: slot.glazeSrc,
-              filter: ['==', ['get', 'isCoreZone'], false],
-              layout: { visibility: 'none' },
-              paint: {
-                'fill-antialias': false,
-                'fill-color': ['get', 'fillColor'],
-                'fill-opacity': ['get', 'fillOpacity'],
-              },
+      // 0A–0C. Draped Unbounded Ancient Civilization Sphere-of-Influence Stack (Static Catalog + `feature-state` Alpha)
+      if (!map.getLayer('unbounded-influence-glaze')) {
+        map.addLayer(
+          {
+            id: 'unbounded-influence-glaze',
+            type: 'fill',
+            source: 'unbounded-glaze-source',
+            filter: ['==', ['get', 'isCoreZone'], false],
+            paint: {
+              'fill-antialias': false,
+              'fill-color': ['get', 'fillColor'],
+              'fill-opacity': [
+                '*',
+                ['get', 'baseOpacity'],
+                ['to-number', ['feature-state', 'alpha'], 0],
+              ],
             },
-            beforeWaterOrSymbol,
-          );
-        }
-
-        const coreId = `unbounded-core-glaze${slot.suffix}`;
-        if (!map.getLayer(coreId)) {
-          map.addLayer(
-            {
-              id: coreId,
-              type: 'fill',
-              source: slot.glazeSrc,
-              filter: ['==', ['get', 'isCoreZone'], true],
-              layout: { visibility: 'none' },
-              paint: {
-                'fill-antialias': false,
-                'fill-color': ['get', 'fillColor'],
-                'fill-opacity': ['get', 'fillOpacity'],
-              },
-            },
-            beforeWaterOrSymbol,
-          );
-        }
-
-        const sphereId = `unbounded-sphere-fill${slot.suffix}`;
-        if (!map.getLayer(sphereId)) {
-          map.addLayer(
-            {
-              id: sphereId,
-              type: 'fill',
-              source: slot.fieldSrc,
-              layout: { visibility: 'none' },
-              paint: {
-                'fill-antialias': false,
-                'fill-color': ['get', 'color'],
-                'fill-opacity': ['get', 'fillOpacity'],
-              },
-            },
-            beforeWaterOrSymbol,
-          );
-        }
+          },
+          beforeWaterOrSymbol,
+        );
       }
 
-      // 1A. Seam-free Demarcated Sovereign / Allied Choropleth Glaze (Exiting -> Steady -> Entering, clipped 100% by `water`)
-      const demarcatedFillSlots: Array<{
-        id: string;
-        source: string;
-      }> = [
-        { id: 'polity-fill-exiting', source: 'polity-exiting-source' },
-        { id: 'polity-fill', source: 'polity-source' },
-        { id: 'polity-fill-entering', source: 'polity-entering-source' },
-      ];
-      for (const fSlot of demarcatedFillSlots) {
-        if (!map.getLayer(fSlot.id)) {
-          map.addLayer(
-            {
-              id: fSlot.id,
-              type: 'fill',
-              source: fSlot.source,
-              layout: { visibility: 'none' },
-              paint: {
-                'fill-antialias': false,
-                'fill-color': ['get', 'fillColor'],
-                'fill-opacity': ['get', 'fillOpacity'],
-              },
+      if (!map.getLayer('unbounded-core-glaze')) {
+        map.addLayer(
+          {
+            id: 'unbounded-core-glaze',
+            type: 'fill',
+            source: 'unbounded-glaze-source',
+            filter: ['==', ['get', 'isCoreZone'], true],
+            paint: {
+              'fill-antialias': false,
+              'fill-color': ['get', 'fillColor'],
+              'fill-opacity': [
+                '*',
+                ['get', 'baseOpacity'],
+                ['to-number', ['feature-state', 'alpha'], 0],
+              ],
             },
-            beforeWaterOrSymbol,
-          );
-        }
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      if (!map.getLayer('unbounded-sphere-fill')) {
+        map.addLayer(
+          {
+            id: 'unbounded-sphere-fill',
+            type: 'fill',
+            source: 'unbounded-field-source',
+            paint: {
+              'fill-antialias': false,
+              'fill-color': ['get', 'color'],
+              'fill-opacity': [
+                '*',
+                ['get', 'baseOpacity'],
+                ['to-number', ['feature-state', 'alpha'], 0],
+              ],
+            },
+          },
+          beforeWaterOrSymbol,
+        );
+      }
+
+      // 1A. Seam-free Demarcated Sovereign / Allied Choropleth Glaze (Static Catalog + `feature-state` Color & Opacity)
+      if (!map.getLayer('polity-fill')) {
+        map.addLayer(
+          {
+            id: 'polity-fill',
+            type: 'fill',
+            source: 'polity-source',
+            paint: {
+              'fill-antialias': false,
+              'fill-color': ['to-color', ['feature-state', 'fillColor'], ['get', 'fillColor']],
+              'fill-opacity': ['to-number', ['feature-state', 'fillOpacity'], 0],
+            },
+          },
+          beforeWaterOrSymbol,
+        );
       }
 
       // 2. Population Density Native GPU Thermal Heatmap (15 -> 160+ persons/km², Blue -> Deep Brown, clipped 100% by `water`)
@@ -1713,87 +1544,70 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         );
       }
 
-      // 1B–1D. Multi-Scale Zoom-Adaptive National Borders (All Ribbons -> All Casings -> All Strokes, strictly beneath `water`)
+      // 1B–1D. Multi-Scale Zoom-Adaptive National Borders (Ribbon -> Casing -> Stroke, Static Catalog + `feature-state`, strictly beneath `water`)
       const borderSpecs = buildZoomAdaptiveBorderPaintSpecs();
-      const borderSlots: Array<{ suffix: '' | '-entering' | '-exiting'; source: string }> = [
-        { suffix: '-exiting', source: 'polity-boundary-exiting-source' },
-        { suffix: '', source: 'polity-boundary-source' },
-        { suffix: '-entering', source: 'polity-boundary-entering-source' },
-      ];
 
-      for (const bSlot of borderSlots) {
-        const ribbonId = `polity-inner-ribbon${bSlot.suffix}`;
-        if (!map.getLayer(ribbonId)) {
-          map.addLayer(
-            {
-              id: ribbonId,
-              type: 'line',
-              source: bSlot.source,
-              layout: {
-                visibility: 'none',
-                'line-cap': 'round',
-                'line-join': 'round',
-              },
-              paint: {
-                'line-color': ['get', 'borderColor'],
-                'line-width': borderSpecs.innerRibbonWidthExpr,
-                'line-blur': borderSpecs.innerRibbonBlurExpr,
-                'line-opacity': 0.28,
-              },
+      if (!map.getLayer('polity-inner-ribbon')) {
+        map.addLayer(
+          {
+            id: 'polity-inner-ribbon',
+            type: 'line',
+            source: 'polity-boundary-source',
+            layout: {
+              'line-cap': 'round',
+              'line-join': 'round',
             },
-            beforeWaterOrSymbol,
-          );
-        }
+            paint: {
+              'line-color': ['to-color', ['feature-state', 'borderColor'], ['get', 'borderColor']],
+              'line-width': borderSpecs.innerRibbonWidthExpr,
+              'line-blur': borderSpecs.innerRibbonBlurExpr,
+              'line-opacity': ['to-number', ['feature-state', 'ribbonOpacity'], 0],
+            },
+          },
+          beforeWaterOrSymbol,
+        );
       }
 
-      for (const bSlot of borderSlots) {
-        const casingId = `polity-casing${bSlot.suffix}`;
-        if (!map.getLayer(casingId)) {
-          map.addLayer(
-            {
-              id: casingId,
-              type: 'line',
-              source: bSlot.source,
-              layout: {
-                visibility: 'none',
-                'line-cap': 'round',
-                'line-join': 'round',
-              },
-              paint: {
-                'line-color': 'rgba(6, 9, 15, 0.88)',
-                'line-width': borderSpecs.casingWidthExpr,
-                'line-blur': borderSpecs.casingBlurExpr,
-                'line-opacity': 0.9,
-              },
+      if (!map.getLayer('polity-casing')) {
+        map.addLayer(
+          {
+            id: 'polity-casing',
+            type: 'line',
+            source: 'polity-boundary-source',
+            layout: {
+              'line-cap': 'round',
+              'line-join': 'round',
             },
-            beforeWaterOrSymbol,
-          );
-        }
+            paint: {
+              'line-color': 'rgba(6, 9, 15, 0.88)',
+              'line-width': borderSpecs.casingWidthExpr,
+              'line-blur': borderSpecs.casingBlurExpr,
+              'line-opacity': ['to-number', ['feature-state', 'casingOpacity'], 0],
+            },
+          },
+          beforeWaterOrSymbol,
+        );
       }
 
-      for (const bSlot of borderSlots) {
-        const strokeId = `polity-stroke${bSlot.suffix}`;
-        if (!map.getLayer(strokeId)) {
-          map.addLayer(
-            {
-              id: strokeId,
-              type: 'line',
-              source: bSlot.source,
-              layout: {
-                visibility: 'none',
-                'line-cap': 'round',
-                'line-join': 'round',
-              },
-              paint: {
-                'line-color': ['get', 'borderColor'],
-                'line-width': borderSpecs.strokeWidthExpr,
-                'line-blur': borderSpecs.strokeBlurExpr,
-                'line-opacity': 0.96,
-              },
+      if (!map.getLayer('polity-stroke')) {
+        map.addLayer(
+          {
+            id: 'polity-stroke',
+            type: 'line',
+            source: 'polity-boundary-source',
+            layout: {
+              'line-cap': 'round',
+              'line-join': 'round',
             },
-            beforeWaterOrSymbol,
-          );
-        }
+            paint: {
+              'line-color': ['to-color', ['feature-state', 'borderColor'], ['get', 'borderColor']],
+              'line-width': borderSpecs.strokeWidthExpr,
+              'line-blur': borderSpecs.strokeBlurExpr,
+              'line-opacity': ['to-number', ['feature-state', 'strokeOpacity'], 0],
+            },
+          },
+          beforeWaterOrSymbol,
+        );
       }
 
       // 3B. Nighttime Illumination Radial Bloom (above `water` for harbor beacons)
@@ -2032,16 +1846,13 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         if (layers.includes('mortality_catastrophe'))
           candidateLayers.push('mortality-epicenter-ring');
         if (layers.includes('species_discovery')) candidateLayers.push('species-points-layer');
-        if (polList.some((p) => !isUnboundedPolity(p))) {
-          candidateLayers.push('polity-fill', 'polity-fill-entering');
+        const hasDemarcatedActive = polList.some((p) => !isUnboundedPolity(p)) && terrs.length > 0;
+        const hasUnboundedActive = polList.some((p) => isUnboundedPolity(p)) && terrs.length > 0;
+        if (hasDemarcatedActive) {
+          candidateLayers.push('polity-fill');
         }
-        if (polList.some((p) => isUnboundedPolity(p)) && terrs.length > 0) {
-          candidateLayers.push(
-            'unbounded-core-glaze',
-            'unbounded-core-glaze-entering',
-            'unbounded-influence-glaze',
-            'unbounded-influence-glaze-entering',
-          );
+        if (hasUnboundedActive) {
+          candidateLayers.push('unbounded-core-glaze', 'unbounded-influence-glaze');
         }
 
         const hitLayers = candidateLayers.filter(
@@ -2049,7 +1860,21 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
         );
         let isInteractive = false;
         if (hitLayers.length > 0) {
-          isInteractive = map.queryRenderedFeatures([px, py], { layers: hitLayers }).length > 0;
+          const renderedHits = map.queryRenderedFeatures([px, py], { layers: hitLayers });
+          isInteractive = renderedHits.some((feat) => {
+            const lid = feat.layer.id;
+            if (lid === 'polity-fill') {
+              return hasDemarcatedActive && terrs.some((t) => t.id === feat.properties?.id);
+            }
+            if (lid === 'unbounded-core-glaze' || lid === 'unbounded-influence-glaze') {
+              return (
+                hasUnboundedActive &&
+                terrs.some((t) => t.id === feat.properties?.id) &&
+                polList.some((p) => isUnboundedPolity(p) && p.id === feat.properties?.polityId)
+              );
+            }
+            return true;
+          });
         }
         if (!isInteractive && polList.some((p) => isUnboundedPolity(p))) {
           isInteractive = Boolean(hitTestUnboundedPolityAtLngLat(lng, lat, polList, terrs));
@@ -2149,18 +1974,25 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
       // Priority 4: Geopolitical territory polygon or unbounded ancient sphere click -> open selected element overview popover
       const geoClickLayers = [
         'polity-fill',
-        'polity-fill-entering',
         'unbounded-core-glaze',
-        'unbounded-core-glaze-entering',
         'unbounded-influence-glaze',
-        'unbounded-influence-glaze-entering',
       ].filter((id) => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none');
 
       if (polList.length > 0) {
         if (geoClickLayers.length > 0) {
+          const hasDemarcatedActive = polList.some((p) => !isUnboundedPolity(p));
           const polHits = map.queryRenderedFeatures(e.point, { layers: geoClickLayers });
-          if (polHits.length > 0) {
-            const hitProps = polHits[0].properties || {};
+          const activeHit = polHits.find((feat) => {
+            const props = feat.properties || {};
+            const tid = props.id;
+            if (!tid || !terrs.some((t) => t.id === tid)) return false;
+            if (feat.layer.id === 'polity-fill') {
+              return hasDemarcatedActive;
+            }
+            return polList.some((p) => isUnboundedPolity(p) && p.id === props.polityId);
+          });
+          if (activeHit) {
+            const hitProps = activeHit.properties || {};
             const clickedId = hitProps.id;
             const clickedPolityId = hitProps.polityId;
             const hitTerr = terrs.find((t) => t.id === clickedId);
@@ -2293,11 +2125,12 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
     return () => window.clearTimeout(timer);
   }, [projectionMode]);
 
-  // Execute toolbar & dataset camera commands (+ / - / reset north / fly_to)
+  // Execute toolbar & dataset camera commands (+ / - / reset north / fly_to) once per command id
   useEffect(() => {
-    if (!cameraCommand) return;
+    if (!cameraCommand || cameraCommand.id === lastHandledCameraCmdIdRef.current) return;
     const map = mapRef.current;
     if (!map) return;
+    lastHandledCameraCmdIdRef.current = cameraCommand.id;
 
     if (cameraCommand.kind === 'zoom_in') {
       map.zoomTo(Math.min(map.getMaxZoom(), map.getZoom() + 0.9), { duration: 280 });
@@ -2334,6 +2167,24 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
   const visibleSpeciesBubbles = hasSpeciesLayer
     ? speciesBubbles.filter((b) => b.visible)
     : [];
+
+  const visibleFlagCallouts = useMemo(() => {
+    const seenAnchorCounts = new Map<string, number>();
+    return flagOverlays
+      .filter((ov) => ov.visible)
+      .map((flagOverlay) => {
+        const pol = flagOverlay.polity;
+        const baseAnchor = `${Math.round(pol.capitalCoords[0] * 10)}_${Math.round(
+          pol.capitalCoords[1] * 10,
+        )}`;
+        const dupIdx = seenAnchorCounts.get(baseAnchor) ?? 0;
+        seenAnchorCounts.set(baseAnchor, dupIdx + 1);
+        return {
+          flagOverlay,
+          calloutKey: `polity-callout-${baseAnchor}-${dupIdx}`,
+        };
+      });
+  }, [flagOverlays]);
 
   return (
     <div
@@ -2497,67 +2348,69 @@ export const MapLibreGlobeStage: React.FC<MapLibreGlobeStageProps> = ({
 
       {/* Always-Present Geopolitical & Historical Flag Leader Callouts */}
       <AnimatePresence>
-        {flagOverlays
-          .filter((ov) => ov.visible)
-          .map((flagOverlay) => {
-            const pol = flagOverlay.polity;
-            const locPolity = localizePolity(pol, language);
-            const isCompactLeft = flagOverlay.x < 250;
-            const viewW = containerRef.current?.clientWidth ?? 1280;
-            const endX = isCompactLeft
-              ? clamp(Math.round(flagOverlay.x), 96, Math.max(96, viewW - 96))
-              : Math.round(flagOverlay.x - 66);
-            const endY = isCompactLeft
-              ? Math.max(68, Math.round(flagOverlay.y - 46))
-              : Math.round(flagOverlay.y - 40);
-            const cardTransform = isCompactLeft
-              ? `translate3d(${endX}px, ${endY}px, 0) translate(-50%, -100%)`
-              : `translate3d(${endX}px, ${endY}px, 0) translate(-100%, -50%)`;
-            const polRegionCount = activeTerritories.filter(
-              (t) => (resolvePolityForTerritory(t, activePolities) ?? pol).id === pol.id,
-            ).length;
+        {visibleFlagCallouts.map(({ flagOverlay, calloutKey }) => {
+          const pol = flagOverlay.polity;
 
-            return (
-              <motion.div
-                key={`polity-callout-${pol.id}`}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                className="pointer-events-none absolute inset-0 z-10"
-              >
-                <svg
-                  className="pointer-events-none absolute inset-0 w-full h-full"
-                  aria-hidden="true"
+              const locPolity = localizePolity(pol, language);
+              const isCompactLeft = flagOverlay.x < 250;
+              const viewW = containerRef.current?.clientWidth ?? 1280;
+              const endX = isCompactLeft
+                ? clamp(Math.round(flagOverlay.x), 96, Math.max(96, viewW - 96))
+                : Math.round(flagOverlay.x - 66);
+              const endY = isCompactLeft
+                ? Math.max(68, Math.round(flagOverlay.y - 46))
+                : Math.round(flagOverlay.y - 40);
+              const cardTransform = isCompactLeft
+                ? `translate3d(${endX}px, ${endY}px, 0) translate(-50%, -100%)`
+                : `translate3d(${endX}px, ${endY}px, 0) translate(-100%, -50%)`;
+              const polRegionCount = activeTerritories.filter(
+                (t) => (resolvePolityForTerritory(t, activePolities) ?? pol).id === pol.id,
+              ).length;
+
+              return (
+                <motion.div
+                  key={calloutKey}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.21, ease: [0.16, 1, 0.3, 1] }}
+                  className="pointer-events-none absolute inset-0 z-10"
                 >
-                  <line
-                    x1={Math.round(flagOverlay.x)}
-                    y1={Math.round(flagOverlay.y)}
-                    x2={endX}
-                    y2={endY}
-                    stroke={pol.borderColor}
-                    strokeOpacity="0.72"
-                    strokeWidth="1.15"
-                  />
-                  <circle
-                    cx={Math.round(flagOverlay.x)}
-                    cy={Math.round(flagOverlay.y)}
-                    r="6.5"
-                    fill="none"
-                    stroke={pol.borderColor}
-                    strokeOpacity="0.52"
-                    strokeWidth="0.9"
-                    strokeDasharray="2 2"
-                  />
-                  <circle
-                    cx={Math.round(flagOverlay.x)}
-                    cy={Math.round(flagOverlay.y)}
-                    r="2.6"
-                    fill={pol.representativeColor}
-                    stroke={pol.borderColor}
-                    strokeWidth="1.25"
-                  />
-                </svg>
+                  <svg
+                    className="pointer-events-none absolute inset-0 w-full h-full"
+                    aria-hidden="true"
+                  >
+                    <line
+                      x1={Math.round(flagOverlay.x)}
+                      y1={Math.round(flagOverlay.y)}
+                      x2={endX}
+                      y2={endY}
+                      stroke={pol.borderColor}
+                      strokeOpacity="0.72"
+                      strokeWidth="1.15"
+                      className="transition-[stroke] duration-200"
+                    />
+                    <circle
+                      cx={Math.round(flagOverlay.x)}
+                      cy={Math.round(flagOverlay.y)}
+                      r="6.5"
+                      fill="none"
+                      stroke={pol.borderColor}
+                      strokeOpacity="0.52"
+                      strokeWidth="0.9"
+                      strokeDasharray="2 2"
+                      className="transition-[stroke] duration-200"
+                    />
+                    <circle
+                      cx={Math.round(flagOverlay.x)}
+                      cy={Math.round(flagOverlay.y)}
+                      r="2.6"
+                      fill={pol.representativeColor}
+                      stroke={pol.borderColor}
+                      strokeWidth="1.25"
+                      className="transition-[fill,stroke] duration-200"
+                    />
+                  </svg>
                 <div
                   style={{ transform: cardTransform }}
                   className="pointer-events-auto absolute top-0 left-0"

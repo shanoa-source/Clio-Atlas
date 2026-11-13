@@ -159,9 +159,7 @@ export default function App() {
   const [parcelsRendered, setParcelsRendered] = useState<boolean>(false);
   const [minBootElapsed, setMinBootElapsed] = useState<boolean>(false);
 
-  const { loadingSnapshot: osmSnapshot } = useOsmResolvedTerritories(
-    bootDismissed ? 0 : currentYear,
-  );
+  const { loadingSnapshot: osmSnapshot } = useOsmResolvedTerritories(currentYear);
 
   // Minimum optical calibration settle (420ms) + airgapped failsafe timeout (8500ms)
   useEffect(() => {

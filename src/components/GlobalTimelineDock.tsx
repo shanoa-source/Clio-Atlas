@@ -114,10 +114,9 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
     }
   }, [normalizedRange, editingRangeField]);
 
-  // Center window on currentYear in standard mode; in range mode, keep window steady unless playhead/range leaves view
+  // In range mode, keep window steady unless range leaves view; in standard mode, derive center synchronously from currentYear
   useEffect(() => {
     if (!normalizedRange) {
-      setWindowCenter(currentYear);
       return;
     }
     const [rStart, rEnd] = normalizedRange;
@@ -135,11 +134,12 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
       }
       setWindowCenter((rStart + rEnd) * 0.5);
     }
-  }, [currentYear, normalizedRange, visibleSpan, windowCenter]);
+  }, [normalizedRange, visibleSpan, windowCenter]);
 
+  const effectiveWindowCenter = normalizedRange ? windowCenter : currentYear;
   const halfSpan = visibleSpan * 0.5;
-  const startYear = windowCenter - halfSpan;
-  const endYear = windowCenter + halfSpan;
+  const startYear = effectiveWindowCenter - halfSpan;
+  const endYear = effectiveWindowCenter + halfSpan;
 
   const { majorStep, minorStep } = useMemo(
     () => computeTimelineTickStep(visibleSpan),
@@ -221,7 +221,7 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
       mode: 'ruler',
       startX: e.clientX,
       initialYear: currentYear,
-      initialCenter: windowCenter,
+      initialCenter: effectiveWindowCenter,
       moved: false,
     };
   };
@@ -239,7 +239,7 @@ export const GlobalTimelineDock: React.FC<GlobalTimelineDockProps> = ({
       mode: which,
       startX: e.clientX,
       initialYear: currentYear,
-      initialCenter: windowCenter,
+      initialCenter: effectiveWindowCenter,
       moved: true,
     };
   };

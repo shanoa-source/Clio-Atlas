@@ -1405,5 +1405,118 @@ test('extractInlandNationalBorder & dissolveSamePolityInlandBorders strip 100% o
   );
 });
 
+test('buildStaticGeopoliticalCatalog & GeopoliticalGpuAnimator eliminate opacity dips and Web Worker reloads across regime changes, rapid scrubbing, and demise', async () => {
+  if (!fs.existsSync(diskCachePath)) return;
+
+  const { getPolityPhases } = await import('../shared/atlasDataLayer');
+  const { getAllResolvedOsmTerritories } = await import('../services/osmBoundaryService');
+  const { buildStaticGeopoliticalCatalog, GeopoliticalGpuAnimator } = await import(
+    './polityTransitionEngine'
+  );
+
+  const catalog = buildStaticGeopoliticalCatalog(
+    getPolityPhases(),
+    getAllResolvedOsmTerritories(),
+  );
+  assert.ok(catalog.demarcatedFillFC.features.length >= 20, 'Static catalog registers all OSM fills once');
+  assert.ok(catalog.demarcatedBoundaryFC.features.length >= 10, 'Static catalog registers dissolved inland border variants');
+  assert.ok(catalog.unboundedFieldFC.features.length > 0, 'Static catalog registers unbounded sphere shells');
+
+  const anim = new GeopoliticalGpuAnimator();
+  assert.equal(anim.bindCatalog(catalog), true);
+  assert.equal(anim.bindCatalog(catalog), false, 'Idempotent bindCatalog does not reset state');
+
+  // 1. Initial immediate render at 500 BCE (Archaic Athens #2563eb)
+  const init = anim.syncTarget(
+    getActivePolityPhases(-500),
+    resolveActiveOsmTerritories(-500),
+    1000,
+    { immediate: true },
+  );
+  assert.equal(init.frame.isAnimating, false);
+  const atticaInit = init.frame.fills.find((f) => f.territoryId === 'attica_salamis_core')!;
+  assert.equal(atticaInit.alpha, 0.65);
+  assert.equal(atticaInit.fillColor, '#2563eb');
+
+  // 2. Regime change + expansion (-500 Archaic Athens -> -478 Early Delian League):
+  // Continuing Attica keeps steady alpha === 0.65 at every frame (ZERO midpoint opacity dip!) while morphing RGB hex!
+  const expectedDelianHex = getActivePolityPhases(-478)[0].representativeColor.toLowerCase();
+  const expectedEmpireHex = getActivePolityPhases(-454)[0].representativeColor.toLowerCase();
+  const step478 = anim.syncTarget(
+    getActivePolityPhases(-478),
+    resolveActiveOsmTerritories(-478),
+    2000,
+  );
+  assert.equal(step478.frame.isAnimating, true);
+  const atticaT0 = step478.frame.fills.find((f) => f.territoryId === 'attica_salamis_core')!;
+  const cycladesT0 = step478.frame.fills.find((f) => f.territoryId === 'cyclades_delos_archipelago')!;
+  assert.equal(atticaT0.alpha, 0.65);
+  assert.equal(atticaT0.fillColor, '#2563eb');
+  assert.equal(cycladesT0.alpha, 0, 'Newly annexed Cyclades starts cleanly at alpha 0');
+  assert.equal(cycladesT0.fillColor, expectedDelianHex, 'Newly annexed Cyclades snaps immediately to target hue');
+
+  const mid478 = anim.sampleFrame(2105);
+  const atticaMid = mid478.fills.find((f) => f.territoryId === 'attica_salamis_core')!;
+  const cycladesMid = mid478.fills.find((f) => f.territoryId === 'cyclades_delos_archipelago')!;
+  assert.equal(atticaMid.alpha, 0.65, 'Continuing territory must have ZERO opacity dip at midpoint');
+  assert.notEqual(atticaMid.fillColor, '#2563eb');
+  assert.notEqual(atticaMid.fillColor, expectedDelianHex);
+  assert.ok(cycladesMid.alpha > 0.15 && cycladesMid.alpha < 0.45);
+
+  // 3. Rapid 5x playback / mouse scrubbing mid-flight (-478 -> -454 Classical Empire at +105ms):
+  // Cyclades continues smoothly from its mid-flight alpha without ever resetting back to 0!
+  const midFlightCycladesAlpha = cycladesMid.alpha;
+  const rapid454 = anim.syncTarget(
+    getActivePolityPhases(-454),
+    resolveActiveOsmTerritories(-454),
+    2105,
+  );
+  const cycladesAfterScrub = rapid454.frame.fills.find(
+    (f) => f.territoryId === 'cyclades_delos_archipelago',
+  )!;
+  assert.ok(
+    Math.abs(cycladesAfterScrub.alpha - midFlightCycladesAlpha) < 0.002,
+    `Rapid scrubbing must preserve C0 alpha continuity (${cycladesAfterScrub.alpha} vs ${midFlightCycladesAlpha})`,
+  );
+
+  const settled454 = anim.sampleFrame(2330);
+  assert.equal(settled454.isAnimating, false);
+  const atticaSettled = settled454.fills.find((f) => f.territoryId === 'attica_salamis_core')!;
+  assert.equal(atticaSettled.alpha, 0.65);
+  assert.equal(atticaSettled.fillColor, expectedEmpireHex);
+
+  // 4. Polity demise (-404 -> -403): starts at full current alpha on frame 0 and decays monotonically to 0
+  anim.syncTarget(getActivePolityPhases(-404), resolveActiveOsmTerritories(-404), 3000, {
+    immediate: true,
+  });
+  const demise = anim.syncTarget(
+    getActivePolityPhases(-403),
+    resolveActiveOsmTerritories(-403),
+    4000,
+  );
+  assert.equal(demise.frame.isAnimating, true);
+  const atticaDemise0 = demise.frame.fills.find((f) => f.territoryId === 'attica_salamis_core')!;
+  assert.equal(atticaDemise0.alpha, 0.65, 'Frame 0 of demise must hold full 0.65 alpha (zero blank-frame blink)');
+
+  const atticaDemiseMid = anim
+    .sampleFrame(4105)
+    .fills.find((f) => f.territoryId === 'attica_salamis_core')!;
+  assert.ok(atticaDemiseMid.alpha > 0.2 && atticaDemiseMid.alpha < 0.45);
+
+  const demiseSettled = anim.sampleFrame(4220);
+  assert.equal(demiseSettled.isAnimating, false);
+  assert.equal(
+    demiseSettled.fills.every((f) => f.alpha === 0),
+    true,
+    'All fills settle cleanly to 0 after 210ms demise fade-out',
+  );
+  assert.equal(
+    demiseSettled.boundaries.every((b) => b.alpha === 0),
+    true,
+    'All inland borders settle cleanly to 0 after 210ms demise fade-out',
+  );
+});
+
+
 
 

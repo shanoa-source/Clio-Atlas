@@ -40,8 +40,7 @@ const osmIndexedCache = new Map<string, SlabIndexedPolygon[]>();
 const territorySlabCache = new Map<string, SlabIndexedPolygon[]>();
 const dissolvedBoundaryCache = new Map<string, GeoJsonMultiLineString>();
 const regionFeatureMemo = new Map<string, ResolvedTerritoryFeature>();
-let lastResolvedSig = '';
-let lastResolvedList: ResolvedTerritoryFeature[] = [];
+const resolvedListBySig = new Map<string, ResolvedTerritoryFeature[]>();
 let inflightLoadPromise: Promise<void> | null = null;
 const subscribers = new Set<() => void>();
 
@@ -1107,7 +1106,7 @@ async function fetchBatchFromProxy(chunk: string[]): Promise<boolean> {
       if (added) {
         territorySlabCache.clear();
         regionFeatureMemo.clear();
-        lastResolvedSig = '';
+        resolvedListBySig.clear();
         notifySubscribers();
       }
       return true;
@@ -1185,7 +1184,7 @@ async function fetchOsmIdsFromApi(osmIds: string[]): Promise<void> {
         });
         territorySlabCache.clear();
         regionFeatureMemo.clear();
-        lastResolvedSig = '';
+        resolvedListBySig.clear();
         notifySubscribers();
       }
     }
@@ -1247,12 +1246,68 @@ if (typeof window !== 'undefined' && typeof fetch === 'function') {
 subscribeAtlasDataLayer(() => {
   territorySlabCache.clear();
   regionFeatureMemo.clear();
-  lastResolvedSig = '';
+  resolvedListBySig.clear();
   notifySubscribers();
   if (typeof window !== 'undefined' && typeof fetch === 'function') {
     void ensureOsmTerritoriesLoaded();
   }
 });
+
+/**
+ * Returns all resolved TerritoryRegions across the entire dataset (regardless of year)
+ * for one-time static GPU GeoJSON source construction.
+ */
+export function getAllResolvedOsmTerritories(): ResolvedTerritoryFeature[] {
+  precomputeAllDissolvedRegions();
+  const out: ResolvedTerritoryFeature[] = [];
+  for (const reg of getTerritoryRegions()) {
+    let resolved = regionFeatureMemo.get(reg.id);
+    if (!resolved) {
+      const mergedPolygons: [number, number][][][] = [];
+      for (const osmId of reg.osmIds) {
+        const geom = osmGeometryCache.get(osmId);
+        if (geom) {
+          appendFilteredOsmPolygons(geom, mergedPolygons);
+        }
+      }
+      if (mergedPolygons.length > 0) {
+        const geometry: GeoJsonMultiPolygon = {
+          type: 'MultiPolygon',
+          coordinates: mergedPolygons,
+        };
+        const allRegIdsLoaded =
+          reg.osmIds.length > 0 && reg.osmIds.every((id) => osmGeometryCache.has(id));
+        const unboundedOnly = isTerritoryExclusivelyUnbounded(reg);
+        const cachedOuter = allRegIdsLoaded ? dissolvedBoundaryCache.get(reg.id) : undefined;
+        const outerBoundary = unboundedOnly
+          ? EMPTY_MULTI_LINE
+          : (cachedOuter ?? extractInlandNationalBorder(geometry));
+        if (!unboundedOnly && allRegIdsLoaded && !cachedOuter) {
+          dissolvedBoundaryCache.set(reg.id, outerBoundary);
+        }
+        resolved = {
+          id: reg.id,
+          polityId: reg.polityId,
+          nameZh: reg.nameZh,
+          nameI18n: reg.nameI18n,
+          validFrom: reg.validFrom,
+          validTo: reg.validTo,
+          tier: reg.tier,
+          geometry,
+          outerBoundary,
+          approxBBox: reg.approxBBox,
+        };
+        if (allRegIdsLoaded) {
+          regionFeatureMemo.set(reg.id, resolved);
+        }
+      }
+    }
+    if (resolved) {
+      out.push(resolved);
+    }
+  }
+  return out;
+}
 
 const EMPTY_TERRITORIES: ResolvedTerritoryFeature[] = [];
 
@@ -1282,8 +1337,9 @@ export function resolveActiveOsmTerritories(year: number): ResolvedTerritoryFeat
   if (activeRegs.length === 0) {
     return EMPTY_TERRITORIES;
   }
-  if (sig === lastResolvedSig) {
-    return lastResolvedList;
+  const memoHit = resolvedListBySig.get(sig);
+  if (memoHit) {
+    return memoHit;
   }
 
   const out: ResolvedTerritoryFeature[] = [];
@@ -1337,8 +1393,10 @@ export function resolveActiveOsmTerritories(year: number): ResolvedTerritoryFeat
     }
   }
 
-  lastResolvedSig = sig;
-  lastResolvedList = out;
+  if (resolvedListBySig.size > 96) {
+    resolvedListBySig.clear();
+  }
+  resolvedListBySig.set(sig, out);
   return out;
 }
 
@@ -1356,7 +1414,7 @@ export function seedOsmGeometryCache(entries: Record<string, GeoJsonMultiPolygon
   territorySlabCache.clear();
   dissolvedBoundaryCache.clear();
   regionFeatureMemo.clear();
-  lastResolvedSig = '';
+  resolvedListBySig.clear();
 }
 
 /**
