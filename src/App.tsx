@@ -37,7 +37,13 @@ import {
   resetAiChannelConfig,
   saveAiChannelConfig,
 } from './utils/aiChannelStorage';
-import { clamp, stepHistoricalYearWithLoop } from './utils/geoMath';
+import {
+  clamp,
+  getActivePolityPhases,
+  getActiveTerritoryRegions,
+  resolvePolityForTerritory,
+  stepHistoricalYearWithLoop,
+} from './utils/geoMath';
 import { extractRegionOverview } from './utils/regionSelector';
 
 const LazyDeepSpaceStage = lazy(() => import('./three/DeepSpaceStage'));
@@ -258,6 +264,29 @@ export default function App() {
     }, intervalMs);
     return () => window.clearInterval(timer);
   }, [isPlaying, playbackSpeed, selectedRange, isIntroRoute]);
+
+  // Smoothly update or dismiss open polity inspector popover across regime changes & polity demise
+  useEffect(() => {
+    setSelectedEntity((prev) => {
+      if (!prev || prev.kind !== 'polity') return prev;
+      if (currentYear >= prev.phase.startYear && currentYear <= prev.phase.endYear) {
+        return prev;
+      }
+      const nextPolities = getActivePolityPhases(currentYear);
+      if (nextPolities.length === 0) {
+        return null;
+      }
+      const successor = nextPolities[0];
+      const nextRegionCount = getActiveTerritoryRegions(currentYear).filter(
+        (t) => (resolvePolityForTerritory(t, nextPolities) ?? successor).id === successor.id,
+      ).length;
+      return {
+        kind: 'polity',
+        phase: successor,
+        regionCount: nextRegionCount,
+      };
+    });
+  }, [currentYear]);
 
   const overview = useMemo(
     () =>

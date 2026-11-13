@@ -199,13 +199,32 @@ test('OpenStreetMap geometries normalize cleanly, dissolve internal sub-municipa
   if (fs.existsSync(diskCachePath)) {
     const active454 = resolveActiveOsmTerritories(-454);
     assert.ok(active454.length >= 10);
+    const pureIslandIds = new Set([
+      'euboea_cleruchy',
+      'lemnos_imbros_skyros',
+      'cyclades_delos_archipelago',
+      'samos_democratic_bastion',
+      'aegina_saronic_control',
+      'melos_cleruchy',
+    ]);
     for (const feat of active454) {
       const steradians = geoArea(feat.geometry as any);
       assert.ok(
         steradians > 0 && steradians < 0.02,
         `OSM Polygon ${feat.id} has invalid spherical area: ${steradians}`,
       );
-      assert.ok(feat.outerBoundary.coordinates.length >= 1);
+      if (pureIslandIds.has(feat.id)) {
+        assert.equal(
+          feat.outerBoundary.coordinates.length,
+          0,
+          `Pure island territory ${feat.id} must emit 0 coastal border strokes`,
+        );
+      } else {
+        assert.ok(
+          feat.outerBoundary.coordinates.length >= 1,
+          `Mainland territory ${feat.id} must retain its inland national border`,
+        );
+      }
     }
   }
 
@@ -1111,4 +1130,280 @@ test('unbounded ancient civilization sphere computation & 350-year Bronze Age ti
     'Open Cretan Sea must NOT hit unbounded sphere',
   );
 });
+
+test('GeopoliticalTransitionController drives snappy 210ms fade-in/fade-out across territorial expansion, regime change, and polity demise, while zoom-adaptive border widths slim down at macro overview', async () => {
+  const {
+    buildZoomAdaptiveBorderPaintSpecs,
+    evaluateBorderWidthsAtZoom,
+    GEOPOLITICAL_FADE_MS,
+    GeopoliticalTransitionController,
+  } = await import('./polityTransitionEngine');
+
+  // 1. Animation duration stays crisp and snappy (<= 250ms, exact 210ms)
+  assert.equal(GEOPOLITICAL_FADE_MS, 210);
+  assert.ok(GEOPOLITICAL_FADE_MS <= 250);
+
+  // 2. Zoom-adaptive border widths: slim at macro overview (zoom 1.2) to prevent crowding, expanding smoothly on zoom-in
+  const macro = evaluateBorderWidthsAtZoom(1.2);
+  const subMacro = evaluateBorderWidthsAtZoom(2.2);
+  const continental = evaluateBorderWidthsAtZoom(3.5);
+  const regional = evaluateBorderWidthsAtZoom(5.5);
+  const local = evaluateBorderWidthsAtZoom(8.0);
+  const polis = evaluateBorderWidthsAtZoom(11.5);
+
+  assert.ok(macro.coreStrokePx < 0.6, `Expected slim macro core stroke < 0.6px, got ${macro.coreStrokePx}`);
+  assert.ok(macro.alliedStrokePx < 0.48, `Expected slim macro allied stroke < 0.48px, got ${macro.alliedStrokePx}`);
+  assert.ok(macro.casingPx < 0.9, `Expected slim macro casing < 0.9px, got ${macro.casingPx}`);
+  assert.ok(macro.innerRibbonPx < 0.95, `Expected slim macro inner ribbon < 0.95px, got ${macro.innerRibbonPx}`);
+
+  assert.ok(
+    macro.coreStrokePx < subMacro.coreStrokePx &&
+      subMacro.coreStrokePx < continental.coreStrokePx &&
+      continental.coreStrokePx < regional.coreStrokePx &&
+      regional.coreStrokePx < local.coreStrokePx &&
+      local.coreStrokePx < polis.coreStrokePx,
+    'Core border stroke width must strictly increase across zoom levels 1.2 -> 11.5',
+  );
+  assert.ok(
+    macro.casingPx < subMacro.casingPx &&
+      subMacro.casingPx < continental.casingPx &&
+      continental.casingPx < regional.casingPx &&
+      regional.casingPx < local.casingPx &&
+      local.casingPx < polis.casingPx,
+    'Border casing width must strictly increase across zoom levels 1.2 -> 11.5',
+  );
+
+  const paintSpecs = buildZoomAdaptiveBorderPaintSpecs();
+  assert.equal(paintSpecs.strokeWidthExpr[0], 'interpolate');
+  assert.deepEqual(paintSpecs.strokeWidthExpr[2], ['zoom']);
+  assert.equal(paintSpecs.casingWidthExpr[0], 'interpolate');
+  assert.equal(paintSpecs.innerRibbonWidthExpr[0], 'interpolate');
+
+  // 3. Demarcated transitions: initial boot -> territorial expansion (-500 -> -499) -> regime change (-499 -> -454) -> demise (-404 -> -403)
+  const ctrl = new GeopoliticalTransitionController();
+  const boot = ctrl.syncTarget(
+    getActivePolityPhases(-500),
+    resolveActiveOsmTerritories(-500),
+    1000,
+    { immediate: true },
+  );
+  assert.equal(boot.changed, true);
+  assert.equal(boot.frame.isAnimating, false);
+  const count500 = boot.frame.steadyDemarcated.length;
+  assert.ok(count500 >= 2);
+  assert.equal(boot.frame.enteringDemarcated.length, 0);
+  assert.equal(boot.frame.exitingDemarcated.length, 0);
+
+  // Territorial expansion within same Archaic Athens regime (-500 -> -499 annexes Lemnos/Imbros/Skyros)
+  const expand = ctrl.syncTarget(
+    getActivePolityPhases(-499),
+    resolveActiveOsmTerritories(-499),
+    2000,
+  );
+  assert.equal(expand.changed, true);
+  assert.equal(expand.frame.isAnimating, true);
+  assert.equal(
+    expand.frame.steadyDemarcated.length,
+    count500,
+    'Pre-existing territories must stay steady at 1.0 opacity during territorial expansion',
+  );
+  assert.ok(expand.frame.enteringDemarcated.length >= 1, 'Newly annexed territory must enter fade-in slot');
+  assert.equal(expand.frame.exitingDemarcated.length, 0);
+  assert.equal(expand.frame.enteringFactor, 0);
+
+  const midExpand = ctrl.sampleFrame(2105);
+  assert.equal(midExpand.isAnimating, true);
+  assert.ok(midExpand.enteringFactor > 0.35 && midExpand.enteringFactor < 0.65);
+
+  const settledExpand = ctrl.sampleFrame(2220);
+  assert.equal(settledExpand.isAnimating, false);
+  assert.equal(settledExpand.enteringFactor, 1);
+
+  // Regime phase change & full imperial expansion (-499 Archaic #2563EB -> -454 Imperial #4F46E5)
+  const regimeSwitch = ctrl.syncTarget(
+    getActivePolityPhases(-454),
+    resolveActiveOsmTerritories(-454),
+    3000,
+  );
+  assert.equal(regimeSwitch.frame.isAnimating, true);
+  assert.ok(regimeSwitch.frame.enteringDemarcated.length >= 10);
+  assert.equal(regimeSwitch.frame.exitingDemarcated.length, count500 + expand.frame.enteringDemarcated.length);
+  assert.equal(regimeSwitch.frame.enteringFactor, 0);
+  assert.equal(regimeSwitch.frame.exitingFactor, 1);
+
+  const midRegime = ctrl.sampleFrame(3105);
+  assert.ok(midRegime.enteringFactor > 0.35 && midRegime.enteringFactor < 0.65);
+  assert.ok(midRegime.exitingFactor > 0.35 && midRegime.exitingFactor < 0.65);
+
+  const settledRegime = ctrl.sampleFrame(3220);
+  assert.equal(settledRegime.isAnimating, false);
+  assert.equal(settledRegime.enteringFactor, 1);
+  assert.equal(settledRegime.exitingFactor, 0);
+  assert.equal(settledRegime.exitingDemarcated.length, 0, 'Superseded regime must clean up to empty after fade-out');
+
+  // Polity demise (-454 -> -403 where Classical Athens has fallen)
+  const demise = ctrl.syncTarget(
+    getActivePolityPhases(-403),
+    resolveActiveOsmTerritories(-403),
+    4000,
+  );
+  assert.equal(demise.frame.isAnimating, true);
+  assert.equal(demise.frame.steadyDemarcated.length, 0);
+  assert.equal(demise.frame.enteringDemarcated.length, 0);
+  assert.ok(demise.frame.exitingDemarcated.length >= 10);
+  assert.equal(demise.frame.exitingFactor, 1);
+
+  const midDemise = ctrl.sampleFrame(4105);
+  assert.ok(midDemise.exitingFactor > 0.35 && midDemise.exitingFactor < 0.65);
+
+  const settledDemise = ctrl.sampleFrame(4220);
+  assert.equal(settledDemise.isAnimating, false);
+  assert.equal(settledDemise.exitingFactor, 0);
+  assert.equal(settledDemise.exitingDemarcated.length, 0, 'Extinct polity must clean up to empty after 210ms fade-out');
+
+  // 4. Unbounded ancient civilization regime transition (-1500 Minoan -> -1450 Mycenaean -> -1179 demise)
+  ctrl.syncTarget(getActivePolityPhases(-1500), resolveActiveOsmTerritories(-1500), 5000, {
+    immediate: true,
+  });
+  const unbSwitch = ctrl.syncTarget(
+    getActivePolityPhases(-1450),
+    resolveActiveOsmTerritories(-1450),
+    6000,
+  );
+  assert.equal(unbSwitch.frame.isAnimating, true);
+  assert.ok(unbSwitch.frame.enteringUnbounded !== null);
+  assert.ok(unbSwitch.frame.exitingUnbounded !== null);
+  assert.equal(unbSwitch.frame.enteringFactor, 0);
+  assert.equal(unbSwitch.frame.exitingFactor, 1);
+
+  const settledUnbSwitch = ctrl.sampleFrame(6220);
+  assert.equal(settledUnbSwitch.isAnimating, false);
+  assert.equal(settledUnbSwitch.exitingUnbounded, null);
+  assert.ok(settledUnbSwitch.enteringUnbounded !== null);
+
+  const unbDemise = ctrl.syncTarget(
+    getActivePolityPhases(-1179),
+    resolveActiveOsmTerritories(-1179),
+    7000,
+  );
+  assert.equal(unbDemise.frame.isAnimating, true);
+  assert.equal(unbDemise.frame.enteringUnbounded, null);
+  assert.ok(unbDemise.frame.exitingUnbounded !== null);
+
+  const settledUnbDemise = ctrl.sampleFrame(7220);
+  assert.equal(settledUnbDemise.isAnimating, false);
+  assert.equal(settledUnbDemise.exitingUnbounded, null);
+});
+
+test('extractInlandNationalBorder & dissolveSamePolityInlandBorders strip 100% of coastal white-fringe strokes while preserving inland national frontiers and dissolving same-polity provincial seams', async () => {
+  if (!fs.existsSync(diskCachePath)) return;
+
+  const { buildGeopoliticalTargetSnapshot } = await import('./polityTransitionEngine');
+
+  // 1. Roman Principate at 117 CE: Sicily/Sardinia & Crete emit 0 coastal strokes; mainland frontier provinces retain inland borders
+  const romanPolities = getActivePolityPhases(117);
+  const romanTerrs = resolveActiveOsmTerritories(117);
+  const romanSnap = buildGeopoliticalTargetSnapshot(romanPolities, romanTerrs);
+
+  const byId117 = new Map(romanSnap.demarcatedItems.map((d) => [d.id, d]));
+  assert.equal(
+    byId117.get('provincia_sicilia_et_sardinia')!.outerBoundary.coordinates.length,
+    0,
+    'Sicily & Sardinia must have 0 coastal border strokes (zero coastal white fringes)',
+  );
+  assert.equal(
+    byId117.get('creta_et_aegean_transit')!.outerBoundary.coordinates.length,
+    0,
+    'Crete must have 0 coastal border strokes',
+  );
+  assert.ok(
+    byId117.get('italia_latium_et_etruria_core')!.outerBoundary.coordinates.length >= 1,
+    'Northern/Central Italia must retain external inland frontiers',
+  );
+  assert.ok(
+    byId117.get('gallia_narbonensis_province')!.outerBoundary.coordinates.length >= 1,
+    'Gallia Narbonensis must retain northern Cévennes/Rhône inland frontier',
+  );
+  assert.ok(
+    byId117.get('hispania_baetica_et_tarraconensis')!.outerBoundary.coordinates.length >= 1,
+    'Hispania must retain western Lusitania/Asturia inland frontier',
+  );
+
+  // 2. Same-polity internal provincial seam dissolution:
+  // In 117 CE, Italia Campania/Apulia only borders the sea and Latium/Samnium (same Roman polity), so its shared seam with Latium reduces segment count!
+  const rawCampania = romanTerrs.find((t) => t.id === 'italia_campania_apulia_ports')!;
+  const dissolvedCampania = byId117.get('italia_campania_apulia_ports')!;
+  const rawCampaniaVerts = rawCampania.outerBoundary.coordinates.reduce(
+    (s, l) => s + l.length,
+    0,
+  );
+  const dissolvedCampaniaVerts = dissolvedCampania.outerBoundary.coordinates.reduce(
+    (s, l) => s + l.length,
+    0,
+  );
+  assert.ok(
+    dissolvedCampaniaVerts < rawCampaniaVerts,
+    `Expected shared Latium-Campania provincial seam to dissolve (${dissolvedCampaniaVerts} < ${rawCampaniaVerts})`,
+  );
+
+  // Similarly in 454 BCE (when Athens holds Boeotia) vs 440 BCE (when Athens no longer holds Boeotia):
+  // Attica's northern frontier dissolves against Boeotia in 454 BCE and reappears cleanly in 440 BCE!
+  const snap454 = buildGeopoliticalTargetSnapshot(
+    getActivePolityPhases(-454),
+    resolveActiveOsmTerritories(-454),
+  );
+  const snap440 = buildGeopoliticalTargetSnapshot(
+    getActivePolityPhases(-440),
+    resolveActiveOsmTerritories(-440),
+  );
+  const byId454 = new Map(snap454.demarcatedItems.map((d) => [d.id, d]));
+  const atticaLines454 = byId454.get('attica_salamis_core')!.outerBoundary.coordinates;
+  const atticaVerts454 = atticaLines454.reduce((s, l) => s + l.length, 0);
+  const atticaVerts440 = snap440.demarcatedItems
+    .find((d) => d.id === 'attica_salamis_core')!
+    .outerBoundary.coordinates.reduce((s, l) => s + l.length, 0);
+  assert.ok(
+    atticaVerts454 < atticaVerts440,
+    `Attica-Boeotia internal seam must dissolve in 454 BCE (${atticaVerts454}) and reappear as external national border in 440 BCE (${atticaVerts440})`,
+  );
+  assert.equal(
+    atticaLines454.some((l) => l.length <= 2),
+    false,
+    'Dissolved Attica-Boeotia seam must leave zero 2-vertex micro-speck remnants',
+  );
+
+  // Pure Aegean island territories in 454 BCE must emit 0 coastal border strokes
+  for (const islandId of [
+    'euboea_cleruchy',
+    'samos_democratic_bastion',
+    'cyclades_delos_archipelago',
+    'lemnos_imbros_skyros',
+    'aegina_tributary',
+    'rhodes_dorian_hexapolis',
+  ]) {
+    const item = byId454.get(islandId);
+    if (item) {
+      assert.equal(
+        item.outerBoundary.coordinates.length,
+        0,
+        `Pure island territory ${islandId} must have 0 coastal border strokes`,
+      );
+    }
+  }
+
+  // Narrow Mytilene strait check: Lesbos (lon < 26.64, lat > 38.92) inside ionia_lesbos_chios_coast must never jump onto mainland Anatolia
+  const ioniaPts = byId454
+    .get('ionia_lesbos_chios_coast')!
+    .outerBoundary.coordinates.flat();
+  const hasLesbosCrossStraitStroke = ioniaPts.some(
+    ([lon, lat]) => lon < 26.64 && lat > 38.92 && lat < 39.42,
+  );
+  assert.equal(
+    hasLesbosCrossStraitStroke,
+    false,
+    'Lesbos must have 0 cross-strait border strokes across the Mytilene channel',
+  );
+});
+
+
 

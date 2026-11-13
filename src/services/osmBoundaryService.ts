@@ -12,6 +12,13 @@ import {
   ResolvedTerritoryFeature,
   TerritoryRegion,
 } from '../types/history';
+import { getContinentalLandmassId50m } from '../three/earthGeoData';
+import {
+  buildSlabIndexedMultiPolygon,
+  buildSlabIndexedPolygon,
+  isPointInSlabMultiPolygon,
+  SlabIndexedPolygon,
+} from '../utils/slabPolygonIndex';
 
 export type OsmLoadPhase =
   | 'idle'
@@ -29,7 +36,8 @@ export interface OsmLoadingSnapshot {
 }
 
 const osmGeometryCache = new Map<string, GeoJsonMultiPolygon>();
-const osmIndexedCache = new Map<string, IndexedPolygonRing[]>();
+const osmIndexedCache = new Map<string, SlabIndexedPolygon[]>();
+const territorySlabCache = new Map<string, SlabIndexedPolygon[]>();
 const dissolvedBoundaryCache = new Map<string, GeoJsonMultiLineString>();
 const regionFeatureMemo = new Map<string, ResolvedTerritoryFeature>();
 let lastResolvedSig = '';
@@ -41,12 +49,12 @@ let currentLoadPhase: OsmLoadPhase = 'idle';
 let loadedFromLocalDb = false;
 let loadFinishedOnce = false;
 
-const IDB_NAME = 'civ_atlas_geodesic_cache_v5';
+const IDB_NAME = 'civ_atlas_geodesic_cache_v7';
 const IDB_STORE = 'snapshots';
 
 function computeIdbSignature(): string {
   const regions = getTerritoryRegions();
-  return `atlas_osm_v5_${regions.map((r) => `${r.id}:${r.osmIds.join('+')}`).join('|')}`;
+  return `atlas_osm_v7_${regions.map((r) => `${r.id}:${r.osmIds.join('+')}`).join('|')}`;
 }
 
 interface PersistedOsmSnapshot {
@@ -458,6 +466,447 @@ export function smoothBoundaryMultiLineString(
 }
 
 /**
+ * Drops microscopic < ~400m (`0.004°` bbox diagonal) uninhabited sea-rock / breakwater specks
+ * from multi-hundred-polygon coastal OpenStreetMap relations while always retaining at least
+ * the largest polygon of every OSM relation.
+ */
+function appendFilteredOsmPolygons(
+  geom: GeoJsonMultiPolygon,
+  target: [number, number][][][],
+): void {
+  const coords = geom.coordinates;
+  if (coords.length === 0) return;
+  if (coords.length === 1) {
+    target.push(coords[0]);
+    return;
+  }
+
+  let bestIdx = 0;
+  let bestDiag = -1;
+  let pushedCount = 0;
+
+  for (let i = 0; i < coords.length; i++) {
+    const ext = coords[i][0];
+    if (!ext || ext.length < 4) continue;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let k = 0; k < ext.length; k++) {
+      const [x, y] = ext[k];
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    const diag = Math.hypot(maxX - minX, maxY - minY);
+    if (diag > bestDiag) {
+      bestDiag = diag;
+      bestIdx = i;
+    }
+    if (diag >= 0.004) {
+      target.push(coords[i]);
+      pushedCount++;
+    }
+  }
+
+  if (pushedCount === 0 && coords[bestIdx]) {
+    target.push(coords[bestIdx]);
+  }
+}
+
+/**
+ * Extracts strictly CONTINENTAL INLAND NATIONAL BORDERS from a historical TerritoryRegion's
+ * MultiPolygon, stripping 100% of coastlines, harbor basins, narrow sea straits, and island rings
+ * so bright national border strokes never clash against CARTO's vector ocean mask.
+ */
+export function extractInlandNationalBorder(
+  multiPolygon: GeoJsonMultiPolygon,
+): GeoJsonMultiLineString {
+  const polys: Array<{ slab: SlabIndexedPolygon; ring: [number, number][] }> = [];
+  for (let i = 0; i < multiPolygon.coordinates.length; i++) {
+    const polyCoords = multiPolygon.coordinates[i];
+    const sp = buildSlabIndexedPolygon(polyCoords);
+    if (!sp) continue;
+    if (
+      multiPolygon.coordinates.length > 1 &&
+      Math.hypot(sp.maxLon - sp.minLon, sp.maxLat - sp.minLat) < 0.004
+    ) {
+      continue;
+    }
+    polys.push({ slab: sp, ring: polyCoords[0] });
+  }
+
+  if (polys.length === 0) {
+    return EMPTY_MULTI_LINE;
+  }
+
+  const slabList = polys.map((p) => p.slab);
+  const rawInlandChains: [number, number][][] = [];
+
+  for (let pi = 0; pi < polys.length; pi++) {
+    const r = polys[pi].ring;
+    const segCount = r.length - 1;
+    if (segCount < 3) continue;
+
+    // Shoelace sum (x_{i+1}-x_i)*(y_{i+1}+y_i) > 0 => Clockwise exterior ring in (lon, lat)
+    let area2 = 0;
+    for (let i = 0; i < segCount; i++) {
+      area2 += (r[i + 1][0] - r[i][0]) * (r[i + 1][1] + r[i][1]);
+    }
+    const isCW = area2 > 0;
+
+    const flags = new Uint8Array(segCount);
+    const segLm = new Int32Array(segCount).fill(-1);
+    const outNormalsX = new Float32Array(segCount);
+    const outNormalsY = new Float32Array(segCount);
+
+    for (let i = 0; i < segCount; i++) {
+      const a = r[i];
+      const b = r[i + 1];
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-7) continue;
+
+      const outX = isCW ? -dy / len : dy / len;
+      const outY = isCW ? dx / len : -dx / len;
+      outNormalsX[i] = outX;
+      outNormalsY[i] = outY;
+
+      const mx = (a[0] + b[0]) * 0.5;
+      const my = (a[1] + b[1]) * 0.5;
+
+      // Fast coastal short-circuit: 5.2 km outward probe eliminates >92% of coastal segments in 1 O(1) check
+      const d3x = mx + outX * 0.048;
+      const d3y = my + outY * 0.048;
+      const lm3 = getContinentalLandmassId50m(d3x, d3y);
+      if (lm3 === -1) continue;
+
+      // Dissolve internal municipal seam if 160m or 360m outward lands inside a sibling sub-polygon
+      if (
+        polys.length > 1 &&
+        (isPointInSlabMultiPolygon(mx + outX * 0.0015, my + outY * 0.0015, slabList, pi) ||
+          isPointInSlabMultiPolygon(mx + outX * 0.0033, my + outY * 0.0033, slabList, pi))
+      ) {
+        continue;
+      }
+
+      // Strict same-landmass continuity from -650m (inside territory) through 0m, +440m, +1.2km, +3.0km, +5.2km, +9.0km, +13.8km:
+      // Mathematically prevents narrow island straits AND 7-13km coastal lagoons/gulfs (e.g. Gulf of Gera, Lake of Tunis, Gulf of Saros)
+      // that 1:50m Natural Earth generalized over from emitting coastal border strokes
+      const inX = mx - outX * 0.006;
+      const inY = my - outY * 0.006;
+      const d0x = mx + outX * 0.004;
+      const d0y = my + outY * 0.004;
+      const d1x = mx + outX * 0.011;
+      const d1y = my + outY * 0.011;
+      const d2x = mx + outX * 0.027;
+      const d2y = my + outY * 0.027;
+      const d4x = mx + outX * 0.082;
+      const d4y = my + outY * 0.082;
+      const d5x = mx + outX * 0.125;
+      const d5y = my + outY * 0.125;
+
+      if (
+        getContinentalLandmassId50m(mx, my) !== lm3 ||
+        getContinentalLandmassId50m(inX, inY) !== lm3 ||
+        getContinentalLandmassId50m(d0x, d0y) !== lm3 ||
+        getContinentalLandmassId50m(d1x, d1y) !== lm3 ||
+        getContinentalLandmassId50m(d2x, d2y) !== lm3 ||
+        getContinentalLandmassId50m(d4x, d4y) !== lm3 ||
+        getContinentalLandmassId50m(d5x, d5y) !== lm3
+      ) {
+        continue;
+      }
+
+      // Reject concave coastal bays/lagoons/fjords whose outward ray crosses water and re-enters own territory
+      if (
+        isPointInSlabMultiPolygon(d1x, d1y, slabList, -1) ||
+        isPointInSlabMultiPolygon(d2x, d2y, slabList, -1) ||
+        isPointInSlabMultiPolygon(d3x, d3y, slabList, -1) ||
+        isPointInSlabMultiPolygon(d4x, d4y, slabList, -1) ||
+        isPointInSlabMultiPolygon(d5x, d5y, slabList, -1)
+      ) {
+        continue;
+      }
+
+      flags[i] = 1;
+      segLm[i] = lm3;
+    }
+
+    // Bridge 1–2 segment micro-gaps along continuous land frontiers on the SAME landmass
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < segCount; i++) {
+        if (!flags[i]) {
+          const prevIdx = (i - 1 + segCount) % segCount;
+          const nextIdx = (i + 1) % segCount;
+          if (flags[prevIdx] && flags[nextIdx] && segLm[prevIdx] === segLm[nextIdx]) {
+            flags[i] = 1;
+            segLm[i] = segLm[prevIdx];
+          }
+        }
+      }
+    }
+
+    // Find a coastal/dissolved gap index to unwrap closed rings cleanly without splitting an inland chain at index 0
+    let startOffset = 0;
+    for (let i = 0; i < segCount; i++) {
+      if (!flags[i]) {
+        startOffset = i;
+        break;
+      }
+    }
+
+    let runStart = -1;
+    let runLenDeg = 0;
+    const runs: Array<{ startStep: number; endStep: number; arcDeg: number; lm: number }> = [];
+
+    for (let step = 0; step <= segCount; step++) {
+      const idx = (startOffset + step) % segCount;
+      const on = step < segCount && flags[idx] === 1;
+      if (on) {
+        if (runStart === -1) {
+          runStart = step;
+          runLenDeg = 0;
+        }
+        runLenDeg += Math.hypot(r[idx + 1][0] - r[idx][0], r[idx + 1][1] - r[idx][1]);
+      } else if (runStart !== -1) {
+        if (runLenDeg >= 0.095) {
+          const firstIdx = (startOffset + runStart) % segCount;
+          runs.push({
+            startStep: runStart,
+            endStep: step - 1,
+            arcDeg: runLenDeg,
+            lm: segLm[firstIdx],
+          });
+        }
+        runStart = -1;
+        runLenDeg = 0;
+      }
+    }
+
+    // Conservatively extend confirmed >= ~10.5km inland borders by at most <= ~1.1km toward the shoreline
+    // while staying inside 1:50m continental land so round line-caps never poke past CARTO's generalized shoreline
+    for (const run of runs) {
+      let sStep = run.startStep;
+      let eStep = run.endStep;
+      const runLm = run.lm;
+
+      let extBackDeg = 0;
+      while (sStep > 0 && extBackDeg < 0.01) {
+        const candIdx = (startOffset + sStep - 1 + segCount) % segCount;
+        const curIdx = (startOffset + sStep) % segCount;
+        if (flags[candIdx]) break;
+        const dot =
+          outNormalsX[candIdx] * outNormalsX[curIdx] +
+          outNormalsY[candIdx] * outNormalsY[curIdx];
+        if (dot < 0.72) break;
+        const a = r[candIdx];
+        const b = r[candIdx + 1];
+        const mx = (a[0] + b[0]) * 0.5;
+        const my = (a[1] + b[1]) * 0.5;
+        const ox = outNormalsX[candIdx];
+        const oy = outNormalsY[candIdx];
+        if (
+          polys.length > 1 &&
+          isPointInSlabMultiPolygon(mx + ox * 0.0018, my + oy * 0.0018, slabList, pi)
+        ) {
+          break;
+        }
+        if (
+          getContinentalLandmassId50m(mx, my) !== runLm ||
+          getContinentalLandmassId50m(mx + ox * 0.008, my + oy * 0.008) !== runLm
+        ) {
+          break;
+        }
+        extBackDeg += Math.hypot(b[0] - a[0], b[1] - a[1]);
+        sStep--;
+      }
+
+      let extFwdDeg = 0;
+      while (eStep < segCount - 1 && extFwdDeg < 0.01) {
+        const candIdx = (startOffset + eStep + 1) % segCount;
+        const curIdx = (startOffset + eStep) % segCount;
+        if (flags[candIdx]) break;
+        const dot =
+          outNormalsX[candIdx] * outNormalsX[curIdx] +
+          outNormalsY[candIdx] * outNormalsY[curIdx];
+        if (dot < 0.72) break;
+        const a = r[candIdx];
+        const b = r[candIdx + 1];
+        const mx = (a[0] + b[0]) * 0.5;
+        const my = (a[1] + b[1]) * 0.5;
+        const ox = outNormalsX[candIdx];
+        const oy = outNormalsY[candIdx];
+        if (
+          polys.length > 1 &&
+          isPointInSlabMultiPolygon(mx + ox * 0.0018, my + oy * 0.0018, slabList, pi)
+        ) {
+          break;
+        }
+        if (
+          getContinentalLandmassId50m(mx, my) !== runLm ||
+          getContinentalLandmassId50m(mx + ox * 0.008, my + oy * 0.008) !== runLm
+        ) {
+          break;
+        }
+        extFwdDeg += Math.hypot(b[0] - a[0], b[1] - a[1]);
+        eStep++;
+      }
+
+      const chain: [number, number][] = [];
+      for (let st = sStep; st <= eStep; st++) {
+        const idx = (startOffset + st) % segCount;
+        if (chain.length === 0) chain.push(r[idx]);
+        chain.push(r[idx + 1]);
+      }
+      if (chain.length >= 2) {
+        rawInlandChains.push(chain);
+      }
+    }
+  }
+
+  if (rawInlandChains.length === 0) {
+    return EMPTY_MULTI_LINE;
+  }
+
+  return smoothBoundaryMultiLineString({
+    type: 'MultiLineString',
+    coordinates: rawInlandChains,
+  });
+}
+
+export function getTerritorySlabPolygons(
+  territoryId: string,
+  geometry: GeoJsonMultiPolygon,
+): SlabIndexedPolygon[] {
+  let cached = territorySlabCache.get(territoryId);
+  if (!cached) {
+    cached = buildSlabIndexedMultiPolygon(geometry);
+    territorySlabCache.set(territoryId, cached);
+  }
+  return cached;
+}
+
+/**
+ * Dissolves shared internal provincial land borders when two or more active TerritoryRegions
+ * belong to the SAME polity (`polityId`) simultaneously (e.g., Latium + Campania + Gallia Narbonensis
+ * in 117 CE Rome, or Attica + Boeotia in 454 BCE Athens), leaving only genuine external national borders.
+ */
+export function dissolveSamePolityInlandBorders<
+  T extends {
+    id: string;
+    polityId: string;
+    geometry: GeoJsonMultiPolygon;
+    outerBoundary: GeoJsonMultiLineString;
+  },
+>(items: T[]): T[] {
+  if (items.length <= 1) return items;
+
+  const byPolity = new Map<string, number[]>();
+  for (let i = 0; i < items.length; i++) {
+    const pid = items[i].polityId;
+    const list = byPolity.get(pid);
+    if (list) list.push(i);
+    else byPolity.set(pid, [i]);
+  }
+
+  let anyModified = false;
+  const result = items.slice();
+
+  for (const [, indices] of byPolity.entries()) {
+    if (indices.length <= 1) continue;
+
+    const slabGroups = indices.map((idx) =>
+      getTerritorySlabPolygons(items[idx].id, items[idx].geometry),
+    );
+
+    const isInsideAnySibling = (lon: number, lat: number, selfGroupIdx: number): boolean => {
+      for (let g = 0; g < slabGroups.length; g++) {
+        if (g === selfGroupIdx) continue;
+        if (isPointInSlabMultiPolygon(lon, lat, slabGroups[g], -1)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    for (let g = 0; g < indices.length; g++) {
+      const itemIdx = indices[g];
+      const item = items[itemIdx];
+      const lines = item.outerBoundary.coordinates;
+      if (lines.length === 0) continue;
+
+      let itemChanged = false;
+      const filteredLines: [number, number][][] = [];
+
+      for (let li = 0; li < lines.length; li++) {
+        const line = lines[li];
+        if (line.length < 2) continue;
+
+        let curRun: [number, number][] = [];
+        let curArcDeg = 0;
+        for (let s = 0; s < line.length - 1; s++) {
+          const a = line[s];
+          const b = line[s + 1];
+          const dx = b[0] - a[0];
+          const dy = b[1] - a[1];
+          const len = Math.hypot(dx, dy);
+          let sharedWithSibling = false;
+
+          if (len > 1e-7) {
+            const mx = (a[0] + b[0]) * 0.5;
+            const my = (a[1] + b[1]) * 0.5;
+            const ux = -dy / len;
+            const uy = dx / len;
+            // Check both 200m and 450m normals so Chaikin-smoothed bends & simplified provincial seams dissolve completely
+            if (
+              isInsideAnySibling(mx + ux * 0.0018, my + uy * 0.0018, g) ||
+              isInsideAnySibling(mx - ux * 0.0018, my - uy * 0.0018, g) ||
+              isInsideAnySibling(mx + ux * 0.0042, my + uy * 0.0042, g) ||
+              isInsideAnySibling(mx - ux * 0.0042, my - uy * 0.0042, g)
+            ) {
+              sharedWithSibling = true;
+            }
+          }
+
+          if (sharedWithSibling) {
+            itemChanged = true;
+            // Drop < ~5km micro-remnant specks left at dissolved provincial corners
+            if (curRun.length >= 2 && curArcDeg >= 0.045) {
+              filteredLines.push(curRun);
+            }
+            curRun = [];
+            curArcDeg = 0;
+          } else {
+            if (curRun.length === 0) curRun.push(a);
+            curRun.push(b);
+            curArcDeg += len;
+          }
+        }
+        if (curRun.length >= 2 && (!itemChanged || curArcDeg >= 0.045)) {
+          filteredLines.push(curRun);
+        }
+      }
+
+      if (itemChanged) {
+        anyModified = true;
+        result[itemIdx] = {
+          ...item,
+          outerBoundary: {
+            type: 'MultiLineString',
+            coordinates: filteredLines,
+          },
+        };
+      }
+    }
+  }
+
+  return anyModified ? result : items;
+}
+
+/**
  * Parses a Nominatim OpenStreetMap GeoJSON FeatureCollection into a map of canonical OSM IDs ("R123", "W456")
  */
 export function parseNominatimGeoJsonFeatures(
@@ -602,7 +1051,7 @@ function precomputeAllDissolvedRegions(): void {
     for (const osmId of reg.osmIds) {
       const geom = osmGeometryCache.get(osmId);
       if (geom) {
-        mergedPolygons.push(...geom.coordinates);
+        appendFilteredOsmPolygons(geom, mergedPolygons);
       }
     }
     if (mergedPolygons.length === 0) continue;
@@ -615,7 +1064,7 @@ function precomputeAllDissolvedRegions(): void {
     const cachedOuter = dissolvedBoundaryCache.get(reg.id);
     const outerBoundary = unboundedOnly
       ? EMPTY_MULTI_LINE
-      : (cachedOuter ?? smoothBoundaryMultiLineString(extractDissolvedOuterBoundary(geometry)));
+      : (cachedOuter ?? extractInlandNationalBorder(geometry));
     if (!unboundedOnly && !cachedOuter) {
       dissolvedBoundaryCache.set(reg.id, outerBoundary);
     }
@@ -651,11 +1100,12 @@ async function fetchBatchFromProxy(chunk: string[]): Promise<boolean> {
         const normalized = normalizeOsmGeometryToMultiPolygon(geom);
         if (normalized) {
           osmGeometryCache.set(id, normalized);
-          osmIndexedCache.set(id, buildIndexedPolygons(normalized));
+          osmIndexedCache.set(id, buildSlabIndexedMultiPolygon(normalized));
           added = true;
         }
       }
       if (added) {
+        territorySlabCache.clear();
         regionFeatureMemo.clear();
         lastResolvedSig = '';
         notifySubscribers();
@@ -686,7 +1136,7 @@ async function fetchOsmIdsFromApi(osmIds: string[]): Promise<void> {
     for (const [id, geom] of Object.entries(persisted.geometries)) {
       if (geom && geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
         osmGeometryCache.set(id, geom);
-        osmIndexedCache.set(id, buildIndexedPolygons(geom));
+        osmIndexedCache.set(id, buildSlabIndexedMultiPolygon(geom));
       }
     }
     for (const [regId, outer] of Object.entries(persisted.dissolvedBoundaries || {})) {
@@ -731,8 +1181,9 @@ async function fetchOsmIdsFromApi(osmIds: string[]): Promise<void> {
         const parsed = parseNominatimGeoJsonFeatures(fc);
         parsed.forEach((geom, key) => {
           osmGeometryCache.set(key, geom);
-          osmIndexedCache.set(key, buildIndexedPolygons(geom));
+          osmIndexedCache.set(key, buildSlabIndexedMultiPolygon(geom));
         });
+        territorySlabCache.clear();
         regionFeatureMemo.clear();
         lastResolvedSig = '';
         notifySubscribers();
@@ -794,6 +1245,7 @@ if (typeof window !== 'undefined' && typeof fetch === 'function') {
 }
 
 subscribeAtlasDataLayer(() => {
+  territorySlabCache.clear();
   regionFeatureMemo.clear();
   lastResolvedSig = '';
   notifySubscribers();
@@ -842,7 +1294,7 @@ export function resolveActiveOsmTerritories(year: number): ResolvedTerritoryFeat
       for (const osmId of reg.osmIds) {
         const geom = osmGeometryCache.get(osmId);
         if (geom) {
-          mergedPolygons.push(...geom.coordinates);
+          appendFilteredOsmPolygons(geom, mergedPolygons);
         }
       }
 
@@ -857,7 +1309,7 @@ export function resolveActiveOsmTerritories(year: number): ResolvedTerritoryFeat
         const cachedOuter = allRegIdsLoaded ? dissolvedBoundaryCache.get(reg.id) : undefined;
         const outerBoundary = unboundedOnly
           ? EMPTY_MULTI_LINE
-          : (cachedOuter ?? smoothBoundaryMultiLineString(extractDissolvedOuterBoundary(geometry)));
+          : (cachedOuter ?? extractInlandNationalBorder(geometry));
         if (!unboundedOnly && allRegIdsLoaded && !cachedOuter) {
           dissolvedBoundaryCache.set(reg.id, outerBoundary);
         }
@@ -898,26 +1350,27 @@ export function seedOsmGeometryCache(entries: Record<string, GeoJsonMultiPolygon
     const normalized = normalizeOsmGeometryToMultiPolygon(geom);
     if (normalized) {
       osmGeometryCache.set(id, normalized);
-      osmIndexedCache.set(id, buildIndexedPolygons(normalized));
+      osmIndexedCache.set(id, buildSlabIndexedMultiPolygon(normalized));
     }
   }
+  territorySlabCache.clear();
   dissolvedBoundaryCache.clear();
   regionFeatureMemo.clear();
   lastResolvedSig = '';
 }
 
 /**
- * Checks whether a point falls inside any loaded OpenStreetMap territory polygon using prebuilt bbox indices.
+ * Checks whether a point falls inside any loaded OpenStreetMap territory polygon using O(1) latitude-slab indices.
  */
 export function isPointInLoadedOsmPolygons(lon: number, lat: number): boolean {
   if (osmGeometryCache.size === 0) return false;
   for (const [id, geom] of osmGeometryCache.entries()) {
     let indexed = osmIndexedCache.get(id);
     if (!indexed) {
-      indexed = buildIndexedPolygons(geom);
+      indexed = buildSlabIndexedMultiPolygon(geom);
       osmIndexedCache.set(id, indexed);
     }
-    if (isPointInsideCandidatePolygons(lon, lat, indexed)) {
+    if (isPointInSlabMultiPolygon(lon, lat, indexed)) {
       return true;
     }
   }

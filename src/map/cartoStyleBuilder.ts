@@ -128,8 +128,20 @@ export function sanitizeCartoDarkMatterStyle(
           },
           paint: {
             'line-color': coastlineColor,
-            'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.78, 5, 1.18, 10, 1.55],
-            'line-blur': 0.36,
+            'line-width': [
+              'interpolate',
+              ['exponential', 1.35],
+              ['zoom'],
+              1.15,
+              0.44,
+              2.5,
+              0.66,
+              5,
+              1.1,
+              10,
+              1.52,
+            ],
+            'line-blur': ['interpolate', ['linear'], ['zoom'], 1.15, 0.16, 4, 0.3, 9, 0.4],
             'line-opacity': 0.92,
           },
         });
@@ -158,6 +170,7 @@ export function sanitizeCartoDarkMatterStyle(
       if (cloned.type === 'fill') {
         cloned.paint = {
           ...cloned.paint,
+          'fill-antialias': false,
           'fill-color': landCoverColor,
           'fill-opacity': 0.45,
         };
